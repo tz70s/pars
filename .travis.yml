@@ -1,0 +1,22 @@
+language: scala
+scala:
+  - 2.12.8
+
+before_install:
+  - export PATH=${PATH}:./vendor/bundle
+
+jdk:
+  - oraclejdk8
+
+# micro-site.
+install:
+  - rvm use 2.3.0 --install --fuzzy
+  - gem update --system
+  - gem install sass
+  - gem install jekyll -v 3.2.1
+
+after_success:
+  - test $TRAVIS_PULL_REQUEST == "false" && test $TRAVIS_BRANCH == "master" && sbt site/publishMicrosite
+
+notifications:
+  email: false
