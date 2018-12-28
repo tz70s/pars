@@ -12,13 +12,13 @@ Self-contained, lightweight distributed computation library for data-intensive w
 To construct an infamous word count task,
 
 ```scala
-implicit val env = Task4s.env("quick-start-task-env")
+implicit val stage = Task4s.stage("QuickStartWordCountApp")
 
 // Define cluster level parallelism strategy, a.k.a cluster-wide task allocation.
 val strategy = ParStrategy(replicas = 4, role = Seq("node1", "node2"))
 
 // Create a task.
-val wordCountTask = Task4s.of(strategy) { implicit env =>
+val wordCountTask = Task4s.of(strategy) { implicit stage =>
   val in = Portal("text-data").asIn[String]
   val out = Portal("word-count").asOut[(String, Int)]
 
@@ -31,7 +31,7 @@ val wordCountTask = Task4s.of(strategy) { implicit env =>
   TaskParShape(shape)
 }
 
-// The spawn method will required env as implicit parameter.
+// The spawn method will required stage as implicit parameter.
 // While the return lifecycle can be used to monitor task status.
 val lifecycleSignal = Task4s.spawn(wordCountTask)
 ```
