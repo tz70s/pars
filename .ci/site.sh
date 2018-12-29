@@ -18,6 +18,6 @@ git rm --cached $(git ls-files)
 git commit --allow-empty -m "Initialized github page."
 git push origin gh-pages
 
-git checkout master
+git checkout -f master
 
 sbt site/publishMicrosite
