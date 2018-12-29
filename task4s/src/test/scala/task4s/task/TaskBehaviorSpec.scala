@@ -9,7 +9,7 @@ class TaskBehaviorSpec extends WordSpec with Matchers {
 
   implicit val stage = TaskStage("TestTaskStage")
 
-  val DummyShape = (_: TaskStage) => { Source(0 to 10).to(Sink.foreach(_ => _)) }
+  val DummyShape = (_: TaskStage) => { Source(0 to 10).to(Sink.ignore) }
 
   "Task Behavior" should {
     "evaluate internal shape" in {
