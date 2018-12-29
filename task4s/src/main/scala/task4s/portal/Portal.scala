@@ -1,5 +1,7 @@
 package task4s.portal
 
+import akka.actor.typed.Behavior
+import akka.actor.typed.scaladsl.Behaviors
 import akka.stream.scaladsl.{Sink, Source}
 
 /**
@@ -30,4 +32,15 @@ class Portal[T, Mat] private (name: String) {
 
 object Portal {
   def apply[T, Mat](name: String): Portal[T, Mat] = new Portal[T, Mat](name)
+
+  sealed trait PortalControlProtocol
+  case object AsSource extends PortalControlProtocol
+
+  def controlBehavior(name: String): Behavior[PortalControlProtocol] = Behaviors.receive {
+    case (ctx, AsSource) =>
+      ctx.log.info(s"Portal($name) create a source ref for streaming.")
+      Behaviors.same
+    case _ =>
+      Behaviors.stopped
+  }
 }

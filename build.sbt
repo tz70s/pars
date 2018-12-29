@@ -11,9 +11,10 @@ val akkaId = "com.typesafe.akka"
 val akkaActorTyped = akkaId %% "akka-actor-typed" % akkaVersion
 val akkaActorTypedTeskit = akkaId %% "akka-actor-testkit-typed" % akkaVersion
 val akkaClusterTyped = akkaId %% "akka-cluster-typed" % akkaVersion
+val akkaClusterShardingTyped = akkaId %% "akka-cluster-sharding-typed" % akkaVersion
 val akkaStreamTyped = akkaId %% "akka-stream-typed" % akkaVersion
 
-lazy val akkas = Seq(akkaActorTyped, akkaActorTypedTeskit, akkaClusterTyped, akkaStreamTyped)
+lazy val akkas = Seq(akkaActorTyped, akkaActorTypedTeskit, akkaClusterTyped, akkaClusterShardingTyped, akkaStreamTyped)
 
 // Alternatives
 val scalaTestVersion = "3.0.5"

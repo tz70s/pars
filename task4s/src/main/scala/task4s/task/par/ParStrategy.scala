@@ -1,4 +1,4 @@
-package task4s.par
+package task4s.task.par
 
 /**
  * Define the cluster-wide parallelism strategy.
