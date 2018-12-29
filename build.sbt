@@ -22,9 +22,6 @@ val scalaTest = "org.scalatest" %% "scalatest" % scalaTestVersion % Test
 
 lazy val libraries = Seq(scalaTest) ++ akkas
 
-lazy val task4s = (project in file("task4s"))
-  .settings(libraryDependencies ++= libraries)
-
 // Micro site configurations.
 lazy val micrositeConf = Seq(
   micrositeName := "task4s",
@@ -49,10 +46,15 @@ lazy val micrositeConf = Seq(
     "white-color" -> "#FFFFFF"
   )
 )
+lazy val task4s = (project in file("task4s"))
+  .settings(libraryDependencies ++= libraries)
 
 lazy val site = (project in file("site"))
   .enablePlugins(MicrositesPlugin)
   .settings(micrositeConf)
 
+lazy val example = (project in file("example"))
+  .dependsOn(task4s)
+
 lazy val root = (project in file("."))
-  .aggregate(task4s, site)
+  .aggregate(task4s, site, example)

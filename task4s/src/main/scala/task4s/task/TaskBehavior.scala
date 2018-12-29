@@ -1,31 +1,47 @@
 package task4s.task
 
-import akka.actor.typed.scaladsl.Behaviors
-import akka.actor.typed.{ActorRef, ActorSystem, Behavior, PostStop}
-import akka.cluster.sharding.typed.ShardingEnvelope
-import akka.cluster.sharding.typed.scaladsl.{ClusterSharding, Entity, EntityTypeKey}
+import akka.actor.typed.scaladsl.{ActorContext, Behaviors}
+import akka.actor.typed.{ActorRef, Behavior, PostStop}
+import task4s.task.TaskBehavior.{Eval, TaskControlProtocol}
 
-private[task4s] object TaskControlBehavior {
+/**
+ * Behavior (actor) wraps a task instance for allocation.
+ * The local one will be called directly, and the cluster one will be wrapped into sharding entity.
+ *
+ * This cake pattern helps the polymorphic calls between local task and cluster task.
+ */
+private[task4s] trait TaskBehavior { this: Task =>
+  val behavior: Behavior[TaskControlProtocol]
+
+  def spawn(context: ActorContext[_]): ActorRef[TaskControlProtocol] = {
+    val ref = context.spawn(behavior, this.ref.value)
+    ref ! Eval
+    ref
+  }
+}
+
+private[task4s] object TaskBehavior {
 
   sealed trait TaskControlProtocol
   case object Eval extends TaskControlProtocol
-  case object Stop extends TaskControlProtocol
+  case object Shutdown extends TaskControlProtocol
 
   /**
-   * Behavior (actor) wraps a task instance for allocation.
-   * The local one will be called directly, and the cluster one will be wrapped into sharding entity.
+   * Basic unit behavior of a task.
+   *
+   * The cluster one will wraps this into sharding version.
    *
    * @param task Task instance wrapped for allocation.
    * @return Behavior of task control.
    */
-  def taskBehavior(task: Task): Behavior[TaskControlProtocol] =
+  def pure(task: Task): Behavior[TaskControlProtocol] =
     Behaviors.receiveMessage {
       case Eval =>
         task.eval()
         Behaviors.same
 
-      case Stop =>
-        task.stop()
+      case Shutdown =>
+        task.shutdown()
         Behaviors.stopped(gracefulShutdownTask(task))
     }
 
@@ -34,23 +50,7 @@ private[task4s] object TaskControlBehavior {
       ctx.log.info(s"Stop task $task behavior after performing some cleanup hook.")
       Behaviors.same
   }
+
+  def spawn[T <: TaskBehavior](task: T, context: ActorContext[_]): ActorRef[TaskControlProtocol] =
+    task.spawn(context)
 }
-
-private[task4s] object ClusterLevelBehavior {
-
-  import TaskControlBehavior._
-
-  val TaskControlTypeKey: EntityTypeKey[TaskControlProtocol] = EntityTypeKey[TaskControlProtocol]("TaskControl")
-
-  def createTaskShard(task: Task, system: ActorSystem[_]): ActorRef[ShardingEnvelope[TaskControlProtocol]] = {
-    val sharding = ClusterSharding(system)
-    sharding.init(
-      Entity(
-        typeKey = TaskControlTypeKey,
-        createBehavior = ctx => taskBehavior(task)
-      )
-    )
-  }
-}
-
-private[task4s] object LocalBehavior {}

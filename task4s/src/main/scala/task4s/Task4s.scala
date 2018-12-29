@@ -1,5 +1,6 @@
 package task4s
-import task4s.task.TaskStage
+
+import task4s.task.{Task, TaskStage}
 
 object Task4s {
 
@@ -16,10 +17,17 @@ object Task4s {
    * }}}
    *
    */
-  def stage(name: String) = TaskStage(name)
+  def stage(name: String): TaskStage = TaskStage(name)
 
   /**
-   * Spawn tasks.
+   * Java API.
    */
-  def spawn(name: String)(implicit stage: TaskStage): Unit = {}
+  def getStage(name: String): TaskStage = stage(name)
+
+  /**
+   * Spawn a defined task, same interface for cluster or local task.
+   *
+   * @param task Task for spawning.
+   */
+  def spawn(task: Task)(implicit stage: TaskStage): Unit = {}
 }
