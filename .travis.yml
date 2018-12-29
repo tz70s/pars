@@ -16,7 +16,7 @@ install:
   - gem install jekyll -v 3.2.1
 
 after_success:
-  - test $TRAVIS_PULL_REQUEST == "false" && test $TRAVIS_BRANCH == "master" && sbt site/publishMicrosite
+  - test $TRAVIS_PULL_REQUEST == "false" && test $TRAVIS_BRANCH == "master" && ./.ci/site.sh
 
 notifications:
   email: false
