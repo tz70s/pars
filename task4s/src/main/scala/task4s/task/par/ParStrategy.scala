@@ -11,11 +11,12 @@ class ParStrategy private (val replicas: Int, val roles: Set[String]) {}
 object ParStrategy {
 
   /**
-   * Default anti-cluster allocation strategy.
+   * Default parallel allocation strategy, which contains only 1 replica.
    *
-   * Note that this is still possible '''parallel''' as possible via underlying akka stream model, but executed in local.
+   * Note that this is still possible '''parallel''' as possible via underlying akka stream model,
+   * i.e. using async operator.
    */
-  val GroundStrategy = ParStrategy(replicas = 1, roles = Set.empty)
+  val DefaultParStrategy = ParStrategy(replicas = 1, roles = Set.empty)
 
   def apply(replicas: Int, roles: Set[String]): ParStrategy = new ParStrategy(replicas, roles)
 }

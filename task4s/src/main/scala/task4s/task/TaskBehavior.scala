@@ -2,7 +2,7 @@ package task4s.task
 
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors}
 import akka.actor.typed.{ActorRef, Behavior, PostStop}
-import task4s.task.TaskBehavior.{Eval, TaskControlProtocol}
+import task4s.task.TaskBehavior.{Eval, TaskBehaviorProtocol}
 
 /**
  * Behavior (actor) wraps a task instance for allocation.
@@ -11,9 +11,9 @@ import task4s.task.TaskBehavior.{Eval, TaskControlProtocol}
  * This cake pattern helps the polymorphic calls between local task and cluster task.
  */
 private[task4s] trait TaskBehavior { this: Task =>
-  val behavior: Behavior[TaskControlProtocol]
+  val behavior: Behavior[TaskBehaviorProtocol]
 
-  def spawn(context: ActorContext[_]): ActorRef[TaskControlProtocol] = {
+  def spawn(context: ActorContext[_]): ActorRef[TaskBehaviorProtocol] = {
     val ref = context.spawn(behavior, this.ref.value)
     ref ! Eval
     ref
@@ -22,9 +22,9 @@ private[task4s] trait TaskBehavior { this: Task =>
 
 private[task4s] object TaskBehavior {
 
-  sealed trait TaskControlProtocol
-  case object Eval extends TaskControlProtocol
-  case object Shutdown extends TaskControlProtocol
+  sealed trait TaskBehaviorProtocol
+  case object Eval extends TaskBehaviorProtocol
+  case object Shutdown extends TaskBehaviorProtocol
 
   /**
    * Basic unit behavior of a task.
@@ -34,23 +34,22 @@ private[task4s] object TaskBehavior {
    * @param task Task instance wrapped for allocation.
    * @return Behavior of task control.
    */
-  def pure(task: Task): Behavior[TaskControlProtocol] =
+  def pure(task: Task): Behavior[TaskBehaviorProtocol] =
     Behaviors.receiveMessage {
       case Eval =>
         task.eval()
         Behaviors.same
 
       case Shutdown =>
-        task.shutdown()
         Behaviors.stopped(gracefulShutdownTask(task))
     }
 
-  private def gracefulShutdownTask(task: Task): Behavior[TaskControlProtocol] = Behaviors.receiveSignal {
+  private def gracefulShutdownTask(task: Task): Behavior[TaskBehaviorProtocol] = Behaviors.receiveSignal {
     case (ctx, PostStop) =>
       ctx.log.info(s"Stop task $task behavior after performing some cleanup hook.")
       Behaviors.same
   }
 
-  def spawn[T <: TaskBehavior](task: T, context: ActorContext[_]): ActorRef[TaskControlProtocol] =
+  def spawn[T <: TaskBehavior](task: T, context: ActorContext[_]): ActorRef[TaskBehaviorProtocol] =
     task.spawn(context)
 }

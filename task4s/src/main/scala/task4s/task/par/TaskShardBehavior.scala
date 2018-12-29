@@ -9,13 +9,14 @@ private[task4s] object TaskShardBehavior {
 
   import TaskBehavior._
 
-  val TaskControlTypeKey: EntityTypeKey[TaskControlProtocol] = EntityTypeKey[TaskControlProtocol]("TaskControl")
+  val TaskBehaviorTypeKey: EntityTypeKey[TaskBehaviorProtocol] =
+    EntityTypeKey[TaskBehaviorProtocol]("TaskBehavior")
 
-  def create(task: Task)(implicit clusterExt: ClusterExtension): ActorRef[ShardingEnvelope[TaskControlProtocol]] = {
+  def create(task: Task)(implicit clusterExt: ClusterExtension): ActorRef[ShardingEnvelope[TaskBehaviorProtocol]] = {
     val shard = clusterExt.shard
     shard.init(
       Entity(
-        typeKey = TaskControlTypeKey,
+        typeKey = TaskBehaviorTypeKey,
         createBehavior = _ => pure(task)
       )
     )

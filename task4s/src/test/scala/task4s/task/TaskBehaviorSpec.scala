@@ -2,12 +2,17 @@ package task4s.task
 
 import akka.actor.testkit.typed.scaladsl.BehaviorTestKit
 import akka.stream.scaladsl.{Sink, Source}
-import org.scalatest.{Matchers, WordSpec}
+import org.scalatest.{BeforeAndAfterAll, Matchers, WordSpec}
 import task4s.task.TaskBehavior.Eval
 
-class TaskBehaviorSpec extends WordSpec with Matchers {
+import scala.concurrent.Await
+import scala.concurrent.duration._
+
+class TaskBehaviorSpec extends WordSpec with Matchers with BeforeAndAfterAll {
 
   implicit val stage = TaskStage("TestTaskStage")
+
+  override def afterAll(): Unit = Await.result(stage.terminate(), 3.seconds)
 
   val DummyShape = (_: TaskStage) => { Source(0 to 10).to(Sink.ignore) }
 

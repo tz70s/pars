@@ -1,13 +1,13 @@
 package task4s.task
 
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors}
-import akka.actor.typed.{ActorRef, ActorSystem, Behavior}
+import akka.actor.typed.{ActorRef, ActorSystem, Behavior, Terminated}
 import akka.stream.typed.scaladsl.ActorMaterializer
-import task4s.task.TaskBehavior.TaskControlProtocol
+import task4s.task.TaskBehavior.TaskBehaviorProtocol
 import task4s.task.par.ClusterExtension
 
 import scala.collection.concurrent.TrieMap
-import scala.concurrent.ExecutionContext
+import scala.concurrent.Future
 
 /**
  * The execution instance and associated context.
@@ -19,7 +19,7 @@ class TaskStage private (val name: String) {
 
   // Make the task stage thread safe.
   private val tasks = TrieMap[TaskRef, Task]()
-  private val activeTasks = TrieMap[TaskRef, ActorRef[TaskControlProtocol]]()
+  private val activeTasks = TrieMap[TaskRef, ActorRef[TaskBehaviorProtocol]]()
 
   /**
    * Access internal actor system for flexibility, i.e. spawn custom actor, using dispatcher, etc.
@@ -31,12 +31,12 @@ class TaskStage private (val name: String) {
    */
   val materializer: ActorMaterializer = ActorMaterializer()(system)
 
-  /**
-   * Re-export execution context via akka configured thread pool.
-   */
-  val executionContext: ExecutionContext = system.executionContext
+  private[task4s] val clusterExt: ClusterExtension = new ClusterExtension()
 
-  val clusterExt: ClusterExtension = new ClusterExtension()
+  def terminate(): Future[Terminated] = {
+    materializer.shutdown()
+    system.terminate()
+  }
 
   /**
    * Look up the task via task reference.
@@ -50,11 +50,10 @@ class TaskStage private (val name: String) {
   /**
    * Insert task with task reference for lookup.
    *
-   * @param ref Reference of insertion task.
-   * @param task Task instance.
+   * @param tuple Task reference and insertion task.
    */
-  private[task4s] def insertTask(ref: TaskRef, task: Task): Unit =
-    tasks += ref -> task
+  private[task4s] def +=(tuple: (TaskRef, Task)): Unit =
+    tasks += tuple
 
   /**
    * Lookup actor reference via task reference.
@@ -62,15 +61,15 @@ class TaskStage private (val name: String) {
    * @param ref Reference of lookup task.
    * @return Optional value of lookup actor reference.
    */
-  private[task4s] def lookUpActorRef(ref: TaskRef): Option[ActorRef[TaskControlProtocol]] = activeTasks.get(ref)
+  private[task4s] def lookUpActorRef(ref: TaskRef): Option[ActorRef[TaskBehaviorProtocol]] = activeTasks.get(ref)
 
   /**
    * Insert actor reference with task reference for lookup.
    *
-   * @param ref Reference of lookup task.
+   * @param tuple Task reference and insertion actor reference.
    */
-  private[task4s] def insertActorRef(ref: TaskRef, actorRef: ActorRef[TaskControlProtocol]): Unit =
-    activeTasks += ref -> actorRef
+  private[task4s] def :+=(tuple: (TaskRef, ActorRef[TaskBehaviorProtocol])): Unit =
+    activeTasks += tuple
 }
 
 object TaskStage {
@@ -80,19 +79,18 @@ object TaskStage {
   /**
    * Task stage related protocols.
    */
-  sealed trait TaskStageProtocol
+  private[task4s] sealed trait TaskStageProtocol
 
-  object TaskStageProtocol {
+  private[task4s] object TaskStageProtocol {
     case object Shutdown extends TaskStageProtocol
 
     case class Stage(task: Task, respondTo: ActorRef[TaskStageProtocol]) extends TaskStageProtocol
-    case class StageReply(ref: ActorRef[TaskControlProtocol]) extends TaskStageProtocol
+    case class StageReply(ref: ActorRef[TaskBehaviorProtocol]) extends TaskStageProtocol
 
   }
 
   import TaskStageProtocol._
 
-  // TODO: supervision.
   private def guardian(stage: TaskStage): Behavior[TaskStageProtocol] =
     Behaviors.setup(ctx => stageTasks(ctx))
 
