@@ -1,4 +1,4 @@
-package task4s.portal
+package task4s.task.shape
 
 import akka.actor.typed.Behavior
 import akka.actor.typed.scaladsl.Behaviors
@@ -33,10 +33,13 @@ class Portal[T, Mat] private (name: String) {
 object Portal {
   def apply[T, Mat](name: String): Portal[T, Mat] = new Portal[T, Mat](name)
 
-  sealed trait PortalControlProtocol
-  case object AsSource extends PortalControlProtocol
+}
 
-  def controlBehavior(name: String): Behavior[PortalControlProtocol] = Behaviors.receive {
+object PortalBehavior {
+  sealed trait PortalBehaviorProtocol
+  case object AsSource extends PortalBehaviorProtocol
+
+  def behavior(name: String): Behavior[PortalBehaviorProtocol] = Behaviors.receive {
     case (ctx, AsSource) =>
       ctx.log.info(s"Portal($name) create a source ref for streaming.")
       Behaviors.same

@@ -11,9 +11,19 @@ import task4s.task.TaskBehavior.{Eval, TaskBehaviorProtocol}
  * This cake pattern helps the polymorphic calls between local task and cluster task.
  */
 private[task4s] trait TaskBehavior { this: Task =>
-  val behavior: Behavior[TaskBehaviorProtocol]
 
-  def spawn(context: ActorContext[_]): ActorRef[TaskBehaviorProtocol] = {
+  /**
+   * Behavior (actor) of the derived task.
+   */
+  private[task4s] val behavior: Behavior[TaskBehaviorProtocol]
+
+  /**
+   * Spawn the task.
+   *
+   * @param context Actor context passed via closure like Behaviors.setup.
+   * @return Actor reference of task behavior.
+   */
+  private[task4s] def spawn(context: ActorContext[_]): ActorRef[TaskBehaviorProtocol] = {
     val ref = context.spawn(behavior, this.ref.value)
     ref ! Eval
     ref

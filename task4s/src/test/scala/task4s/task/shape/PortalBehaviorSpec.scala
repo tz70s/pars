@@ -1,4 +1,4 @@
-package task4s.portal
+package task4s.task.shape
 
 import akka.actor.testkit.typed.scaladsl.BehaviorTestKit
 import org.scalatest.{Matchers, WordSpec}

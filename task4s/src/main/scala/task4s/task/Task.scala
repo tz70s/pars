@@ -5,10 +5,9 @@ import java.util.UUID.randomUUID
 import akka.NotUsed
 import akka.actor.typed.Behavior
 import akka.actor.typed.scaladsl.AskPattern._
-import akka.stream.scaladsl.RunnableGraph
 import akka.util.Timeout
-import task4s.task.Task.ShapeBuilder
 import task4s.task.TaskStage.TaskStageProtocol
+import task4s.task.shape.TaskShape.ShapeBuilder
 
 import scala.concurrent.Future
 import scala.concurrent.duration._
@@ -67,8 +66,6 @@ private[task4s] class ClusterTask(ref: TaskRef, shape: ShapeBuilder)(implicit st
 object Task {
 
   implicit val DefaultTaskStageTimeout = Timeout(1500.millis)
-
-  private[task4s] type ShapeBuilder = TaskStage => RunnableGraph[NotUsed]
 
   /**
    * Create an arbitrary task by passing shape builder closure.

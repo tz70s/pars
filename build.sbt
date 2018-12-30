@@ -56,5 +56,9 @@ lazy val site = (project in file("site"))
 lazy val example = (project in file("example"))
   .dependsOn(task4s)
 
+lazy val `task4s-jmh` = (project in file("task4s-jmh"))
+  .enablePlugins(JmhPlugin)
+  .dependsOn(task4s)
+
 lazy val root = (project in file("."))
-  .aggregate(task4s, site, example)
+  .aggregate(task4s, site, example, `task4s-jmh`)
