@@ -1,26 +1,34 @@
 package task4s.task
 
-import akka.stream.scaladsl.{Sink, Source}
-import org.scalatest.{BeforeAndAfterAll, Matchers, WordSpec}
+import akka.stream.scaladsl.{Keep, Sink, Source}
+import org.scalatest.Matchers
 
-import scala.concurrent.Await
-import scala.concurrent.duration._
+object TestDoubles {
 
-class TaskSpec extends WordSpec with Matchers with BeforeAndAfterAll {
+  val empty = (stage: TaskStage) => Source.empty.to(Sink.ignore)
 
-  implicit val stage = TaskStage("TestTaskStage")
+  val sum = (stage: TaskStage) => Source(0 to 10).toMat(Sink.reduce[Int](_ + _))(Keep.right)
+}
 
-  override def afterAll(): Unit = Await.result(stage.terminate(), 3.seconds)
+class TaskSpec extends TaskStageExtension with Matchers {
 
-  val DummyShape = (_: TaskStage) => { Source(0 to 10).to(Sink.ignore) }
+  "Task" should {
+    "construct task reference value via factory method" in {
+      val localT = Task.local("DummyTask")(TestDoubles.empty)
+      localT.ref shouldBe "DummyTask"
+    }
 
-  "Task Behavior" should {
-    "constructed via task factory method" in {
-      val localT = Task.local(Some("DummyTask"))(DummyShape)
-      // forced lookup
-      val task = stage.lookUpTask(localT).get
-      task.tpe shouldBe "local"
-      task.ref shouldBe localT
+    "reflect for task type" in {
+      val localT = Task.local(TestDoubles.empty)
+      localT.tpe shouldBe "LocalTask"
+    }
+
+    "return materialized value after task spawned" in {
+      val localT = Task.local(TestDoubles.sum)
+
+      // TODO: the boilerplate flatMap will be removed after revising future.
+      val future = Task.spawn(localT).flatMap(f => f)
+      future.futureValue shouldBe 55
     }
   }
 }

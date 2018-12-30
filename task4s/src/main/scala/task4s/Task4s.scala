@@ -23,11 +23,4 @@ object Task4s {
    * Java API.
    */
   def getStage(name: String): TaskStage = stage(name)
-
-  /**
-   * Spawn a defined task, same interface for cluster or local task.
-   *
-   * @param task Task for spawning.
-   */
-  def spawn(task: Task)(implicit stage: TaskStage): Unit = {}
 }

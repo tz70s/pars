@@ -1,19 +1,16 @@
 package task4s.task.par
 
-import akka.actor.typed.ActorRef
-import akka.cluster.sharding.typed.ShardingEnvelope
-import akka.cluster.sharding.typed.scaladsl.{Entity, EntityTypeKey}
-import task4s.task.{Task, TaskBehavior}
+import akka.cluster.sharding.typed.scaladsl.EntityTypeKey
+import task4s.task.TaskProtocol.TaskProtocol
 
 object ClusterShardingTask {
 
-  import TaskBehavior._
-
   val ClusterShardingTaskStrBase = this.getClass.getName.replace("$", "").split("\\.").last
 
-  val ClusterShardingTaskTypeKey: EntityTypeKey[TaskBehaviorProtocol] =
-    EntityTypeKey[TaskBehaviorProtocol](ClusterShardingTaskStrBase)
+  val ClusterShardingTaskTypeKey: EntityTypeKey[TaskProtocol] =
+    EntityTypeKey[TaskProtocol](ClusterShardingTaskStrBase)
 
+  /*
   def create(task: Task)(implicit clusterExt: ClusterExtension): ActorRef[ShardingEnvelope[TaskBehaviorProtocol]] = {
     val shard = clusterExt.shard
     shard.init(
@@ -23,4 +20,5 @@ object ClusterShardingTask {
       )
     )
   }
+ */
 }

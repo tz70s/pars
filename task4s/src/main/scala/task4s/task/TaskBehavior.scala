@@ -1,8 +1,9 @@
 package task4s.task
 
-import akka.actor.typed.scaladsl.{ActorContext, Behaviors}
+import akka.actor.typed.scaladsl.Behaviors
 import akka.actor.typed.{ActorRef, Behavior, PostStop}
-import task4s.task.TaskBehavior.{Eval, TaskBehaviorProtocol}
+
+import scala.reflect.ClassTag
 
 /**
  * Behavior (actor) wraps a task instance for allocation.
@@ -10,56 +11,47 @@ import task4s.task.TaskBehavior.{Eval, TaskBehaviorProtocol}
  *
  * This cake pattern helps the polymorphic calls between local task and cluster task.
  */
-private[task4s] trait TaskBehavior { this: Task =>
+private[task4s] trait TaskBehavior { this: Task[_] =>
+
+  import TaskProtocol._
 
   /**
    * Behavior (actor) of the derived task.
    */
-  private[task4s] val behavior: Behavior[TaskBehaviorProtocol]
-
-  /**
-   * Spawn the task.
-   *
-   * @param context Actor context passed via closure like Behaviors.setup.
-   * @return Actor reference of task behavior.
-   */
-  private[task4s] def spawn(context: ActorContext[_]): ActorRef[TaskBehaviorProtocol] = {
-    val ref = context.spawn(behavior, this.ref.value)
-    ref ! Eval
-    ref
-  }
-}
-
-private[task4s] object TaskBehavior {
-
-  sealed trait TaskBehaviorProtocol
-  case object Eval extends TaskBehaviorProtocol
-  case object Shutdown extends TaskBehaviorProtocol
+  private[task4s] val behavior: Behavior[TaskProtocol] = pure
 
   /**
    * Basic unit behavior of a task.
    *
    * The cluster one will wraps this into sharding version.
    *
-   * @param task Task instance wrapped for allocation.
    * @return Behavior of task control.
    */
-  def pure(task: Task): Behavior[TaskBehaviorProtocol] =
+  protected[task4s] def pure: Behavior[TaskProtocol] =
     Behaviors.receiveMessage {
-      case Eval =>
-        task.eval()
+      case Spawn(replyTo) =>
+        val matValue = spawn()
+        replyTo ! SpawnRetValue(matValue)
         Behaviors.same
 
       case Shutdown =>
-        Behaviors.stopped(gracefulShutdownTask(task))
+        Behaviors.stopped(gracefulShutdownTask)
+
+      case _ =>
+        Behaviors.same
     }
 
-  private def gracefulShutdownTask(task: Task): Behavior[TaskBehaviorProtocol] = Behaviors.receiveSignal {
+  private def gracefulShutdownTask: Behavior[TaskProtocol] = Behaviors.receiveSignal {
     case (ctx, PostStop) =>
-      ctx.log.info(s"Stop task $task behavior after performing some cleanup hook.")
+      ctx.log.info(s"Stop task $this behavior after performing some cleanup hook.")
       Behaviors.same
   }
+}
 
-  def spawn[T <: TaskBehavior](task: T, context: ActorContext[_]): ActorRef[TaskBehaviorProtocol] =
-    task.spawn(context)
+private[task4s] object TaskProtocol {
+  sealed trait TaskProtocol
+
+  case class Spawn(replyTo: ActorRef[TaskProtocol]) extends TaskProtocol
+  case class SpawnRetValue[M: ClassTag](mat: M) extends TaskProtocol
+  case object Shutdown extends TaskProtocol
 }

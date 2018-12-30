@@ -2,20 +2,23 @@ package task4s.task
 
 import java.util.UUID.randomUUID
 
-import akka.NotUsed
 import akka.actor.typed.Behavior
 import akka.actor.typed.scaladsl.AskPattern._
 import akka.util.Timeout
+import task4s.task.TaskProtocol.TaskProtocol
 import task4s.task.TaskStage.TaskStageProtocol
+import task4s.task.par.ParStrategy
 import task4s.task.shape.TaskShape.ShapeBuilder
 
 import scala.concurrent.Future
 import scala.concurrent.duration._
+import scala.reflect.ClassTag
 
-abstract class Task private[task4s] (val ref: TaskRef, val shape: ShapeBuilder)(implicit val stage: TaskStage)
-    extends TaskBehavior {
+abstract class Task[+Mat] private[task4s] (val ref: String, val shape: ShapeBuilder[Mat])(
+    implicit val stage: TaskStage
+) extends TaskBehavior {
 
-  val tpe: String
+  def tpe: String = this.getClass.getCanonicalName.split("\\.").last
 
   private implicit val mat = stage.materializer
 
@@ -26,86 +29,129 @@ abstract class Task private[task4s] (val ref: TaskRef, val shape: ShapeBuilder)(
   private val runnable = shape(stage)
 
   /**
-   * Evaluate internal runnable graph, but no materialized value get returned.
+   * Materialized internal runnable graph, but no materialized value get returned.
    */
-  private[task4s] def eval(): NotUsed =
+  private[task4s] def spawn(): Mat =
     // This is expected as unbounded stream that the materialized value will never return.
     runnable.run()
 
-  override def toString: String = s"task-$tpe-${ref.toString}"
-}
+  override def toString: String = s"task-$tpe-$ref}"
 
-/**
- * Reference to a specific task.
- *
- * @param definedValue User defined value which indicates task name.
- */
-case class TaskRef private[task4s] (definedValue: Option[String]) {
-  private[task4s] val value: String = definedValue.getOrElse(s"default-${randomUUID().toString}")
+  override def equals(obj: Any): Boolean =
+    obj match {
+      case t: Task[Mat] =>
+        ref.equals(t.ref)
+      case _ =>
+        false
+    }
 
-  override def toString: String = value
+  override def hashCode(): Int = ref.hashCode
 }
 
 /**
  * Local task class.
  */
-private[task4s] class LocalTask(ref: TaskRef, shape: ShapeBuilder)(implicit stage: TaskStage) extends Task(ref, shape) {
-  override val tpe = "local"
-  override val behavior: Behavior[TaskBehavior.TaskBehaviorProtocol] = TaskBehavior.pure(this)
-}
+private[task4s] class LocalTask[+Mat](ref: String, shape: ShapeBuilder[Mat])(implicit stage: TaskStage)
+    extends Task(ref, shape)
 
 /**
  * Cluster level task.
  */
-private[task4s] class ClusterTask(ref: TaskRef, shape: ShapeBuilder)(implicit stage: TaskStage)
-    extends Task(ref, shape) {
-  override val tpe = "cluster"
-  override val behavior: Behavior[TaskBehavior.TaskBehaviorProtocol] = TaskBehavior.pure(this)
+private[task4s] class ClusterTask[+Mat](ref: String, shape: ShapeBuilder[Mat], val strategy: ParStrategy)(
+    implicit stage: TaskStage
+) extends Task(ref, shape) {
+  override val behavior: Behavior[TaskProtocol] = pure
 }
 
 object Task {
 
-  implicit val DefaultTaskStageTimeout = Timeout(1500.millis)
+  implicit val DefaultTaskSpawnTimeout = Timeout(1500.millis)
+
+  private def autoRef: String = s"default-${randomUUID().toString}"
 
   /**
-   * Create an arbitrary task by passing shape builder closure.
+   * Create a local task by passing shape builder closure.
+   *
+   * @param name Task reference name.
+   * @param shape Task data flow shape builder closure.
+   * @param stage Task stage for spawning tasks internally.
+   * @tparam M Materialized value of shape. (see akka stream)
+   * @return Task instance.
    */
-  def local(name: Option[String] = None)(shape: ShapeBuilder)(implicit stage: TaskStage): TaskRef = {
-    val ref = TaskRef(name)
-    stage += ref -> new LocalTask(ref, shape)
-    ref
-  }
+  def local[M](name: String)(shape: ShapeBuilder[M])(implicit stage: TaskStage): Task[M] =
+    new LocalTask(name, shape)
+
+  /**
+   * Create a local task by passing shape builder closure.
+   *
+   * @param shape Task data flow shape builder closure.
+   * @param stage Task stage for spawning tasks internally.
+   * @tparam M Materialized value of shape. (see akka stream)
+   * @return Task instance.
+   */
+  def local[M](shape: ShapeBuilder[M])(implicit stage: TaskStage): Task[M] =
+    local(autoRef)(shape)
+
+  /**
+   * Create a cluster task by passing shape builder closure.
+   *
+   * @param strategy ParStrategy, indicates the parallel settings of cluster aware task allocation.
+   * @param name Task reference name.
+   * @param shape Task data flow shape builder closure.
+   * @param stage Task stage for spawning tasks internally.
+   * @tparam M Materialized value of shape. (see akka stream)
+   * @return Task instance.
+   */
+  def cluster[M](strategy: ParStrategy, name: String)(shape: ShapeBuilder[M])(implicit stage: TaskStage): Task[M] =
+    new ClusterTask[M](name, shape, strategy)
+
+  /**
+   * Create a cluster task by passing shape builder closure.
+   *
+   * @param strategy ParStrategy, indicates the parallel settings of cluster aware task allocation.
+   * @param shape Task data flow shape builder closure.
+   * @param stage Task stage for spawning tasks internally.
+   * @tparam M Materialized value of shape. (see akka stream)
+   * @return Task instance.
+   */
+  def cluster[M](strategy: ParStrategy)(shape: ShapeBuilder[M])(implicit stage: TaskStage): Task[M] =
+    cluster(strategy, autoRef)(shape)
+
+  /**
+   * Create a cluster task by passing shape builder closure.
+   *
+   * The ParStrategy use the default strategy [[par.ParStrategy.DefaultParStrategy]].
+   *
+   * @param shape Task data flow shape builder closure.
+   * @param stage Task stage for spawning tasks internally.
+   * @tparam M Materialized value of shape. (see akka stream)
+   * @return Task instance.
+   */
+  def cluster[M](shape: ShapeBuilder[M])(implicit stage: TaskStage): Task[M] =
+    cluster(ParStrategy.DefaultParStrategy, autoRef)(shape)
 
   /**
    * Spawn a defined task, same interface for cluster or local task.
    *
-   * @param ref Reference of task for spawning.
+   * @param task Task for spawning.
+   * @param stage Task stage for spawning tasks internally.
+   * @tparam M Materialized value of shape. (see akka stream)
+   * @return Materialized future value.
    */
-  def spawn(ref: TaskRef)(implicit stage: TaskStage): Future[NotUsed] = {
-    implicit val ec = stage.system.executionContext
-
-    stage.lookUpTask(ref) match {
-      case Some(task) => internalStaging(task)
-      case None =>
-        Future.failed(
-          TaskNotFoundError(
-            "Task lookup failure via task reference. The potential problem is caused by race condition."
-          )
-        )
-    }
-  }
-
-  private def internalStaging(task: Task)(implicit stage: TaskStage): Future[NotUsed] = {
+  def spawn[M: ClassTag](task: Task[M])(implicit stage: TaskStage): Future[M] = {
     import TaskStageProtocol._
 
-    // Scheduler is required for ask pattern in akka actor typed api.
-    implicit val scheduler = stage.system.scheduler
     implicit val ec = stage.system.executionContext
+
+    // Scheduler is required for ask pattern in akka actor typed API.
+    implicit val scheduler = stage.system.scheduler
+
     val result: Future[TaskStageProtocol] = stage.system ? (askRef => Stage(task, askRef))
+
     result.flatMap {
-      case StageReply(actorRef) =>
-        stage :+= task.ref -> actorRef
-        Future.successful(NotUsed)
+      case StageSuccess(_, matValue: M, _) =>
+        Future.successful(matValue)
+
       case _ =>
         Future.failed(TaskStageError("Unexpected message return via guardian actor during spawning tasks."))
     }
