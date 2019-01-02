@@ -1,4 +1,9 @@
+# Basic build ignorance.
 .idea/
 target/
 
+# OSX
 .DS_Store
+
+# Experimental worksheet for api testing.
+WorkSheet.sc

@@ -4,6 +4,7 @@
 ThisBuild / name := "task4s"
 ThisBuild / version := "0.1"
 ThisBuild / scalaVersion := "2.12.8"
+ThisBuild / scalacOptions += "-Ypartial-unification"
 
 // Akka dependencies.
 val akkaVersion = "2.5.19"
@@ -19,6 +20,16 @@ lazy val akkas = Seq(akkaActorTyped, akkaActorTypedTeskit, akkaClusterTyped, akk
 // Alternatives
 val scalaTestVersion = "3.0.5"
 val scalaTest = "org.scalatest" %% "scalatest" % scalaTestVersion % Test
+
+val logback = "ch.qos.logback" % "logback-classic" % "1.2.3"
+val logging = "com.typesafe.scala-logging" %% "scala-logging" % "3.9.0"
+
+val FS2 = "co.fs2"
+val FS2Version = "1.0.2"
+val FS2Core = FS2 %% "fs2-core" % FS2Version
+val FS2IO = FS2 %% "fs2-io" % FS2Version
+
+lazy val FS2s = Seq(FS2Core, FS2IO)
 
 lazy val libraries = Seq(scalaTest) ++ akkas
 
@@ -59,6 +70,9 @@ lazy val example = (project in file("example"))
 lazy val `task4s-jmh` = (project in file("task4s-jmh"))
   .enablePlugins(JmhPlugin)
   .dependsOn(task4s)
+
+lazy val `task4s-fs2` = (project in file("task4s-fs2"))
+  .settings(libraryDependencies ++= FS2s ++ Seq(logback, logging))
 
 lazy val root = (project in file("."))
   .aggregate(task4s, site, example, `task4s-jmh`)
