@@ -4,7 +4,7 @@
 ThisBuild / name := "task4s"
 ThisBuild / version := "0.1"
 ThisBuild / scalaVersion := "2.12.8"
-ThisBuild / scalacOptions += "-Ypartial-unification"
+ThisBuild / scalacOptions ++= Seq("-Ypartial-unification", "-language:higherKinds")
 
 // Akka dependencies.
 val akkaVersion = "2.5.19"

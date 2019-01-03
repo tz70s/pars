@@ -5,10 +5,11 @@ import java.nio.channels.AsynchronousChannelGroup
 import java.nio.channels.spi.AsynchronousChannelProvider
 import java.util.concurrent.Executors
 
-import cats.effect.{ExitCode, IO, IOApp}
+import cats.effect._
 import fs2.{text, Stream}
 import cats.implicits._
 import com.typesafe.scalalogging.Logger
+import fs2.concurrent.Topic
 import fs2.io.tcp.Socket
 
 object Main extends IOApp {
@@ -39,29 +40,30 @@ object Main extends IOApp {
   def tcpServer: Stream[IO, Unit] = {
     val address = new InetSocketAddress("0.0.0.0", 7828)
 
-    val sockets = for {
+    for {
       // Start server.
       _ <- Stream.eval(IO { log.info(s"Start tcp server at $address") })
       resource <- Socket.server[IO](address)
       socket <- Stream.resource(resource)
       remote <- Stream.eval(socket.remoteAddress)
       _ <- Stream.eval(IO { log.info(s"Get connection - $remote") })
-      bufferSize = 1024
-    } yield socket.reads(bufferSize).through(text.utf8Decode).through(text.lines).map(println)
-
-    sockets.parJoinUnbounded
+      evtStream <- Stream.eval(Topic[IO, Event](Receiving("")))
+      _ <- handlePeer(socket, evtStream)
+    } yield ()
   }
 
-  // Effective stream
-  def launchEffectiveStream(): IO[Unit] = {
-    val stream = for {
-      num <- Stream.range(0, 100)
-      doubleVal = num * 2
-      effect = IO { println(s"The iterated number is $doubleVal ") }
-      _ <- Stream.eval(effect)
-    } yield ()
+  sealed trait Event
+  case class Receiving(text: String) extends Event
 
-    stream.compile.drain
+  /**
+   * Decoupling stream via topic stream.
+   *
+   * Seems that it's better to abstract over context to achieve correct usage in FS2.
+   */
+  def handlePeer[F[_]](socket: Socket[F], evtStream: Topic[F, Event])(implicit F: Concurrent[F]): Stream[F, Unit] = {
+    val publish = evtStream.publish(socket.reads(1024).through(text.utf8Decode).through(text.lines).map(Receiving))
+    val subscribe = evtStream.subscribe(10).flatMap(evt => Stream.eval(F.delay { println(evt) }))
+    Stream(publish.concurrently(subscribe)).parJoin(2)
   }
 
   def run(args: List[String]): IO[ExitCode] =
