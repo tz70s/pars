@@ -1,7 +1,9 @@
 package task4s.task
 
+import akka.serialization.SerializationExtension
 import akka.stream.scaladsl.{Keep, Sink, Source}
 import org.scalatest.Matchers
+import org.scalatest.time.{Millis, Span}
 
 object TestDoubles {
 
@@ -11,6 +13,8 @@ object TestDoubles {
 }
 
 class TaskSpec extends TaskStageExtension with Matchers {
+
+  implicit val scale = scaled(Span(300, Millis))
 
   "Task" should {
     "construct task reference value via factory method" in {
@@ -27,8 +31,18 @@ class TaskSpec extends TaskStageExtension with Matchers {
       val localT = Task.local(TestDoubles.sum)
 
       // TODO: the boilerplate flatMap will be removed after revising future.
-      val future = Task.spawn(localT).flatMap(f => f)
+      val future = Task.spawn(localT).unsafeToFuture().flatMap(f => f)
       future.futureValue shouldBe 55
+    }
+
+    "serializable via Java serialization" in {
+      import akka.actor.typed.scaladsl.adapter._
+
+      val localT = Task.local(TestDoubles.sum)
+      val serialization = SerializationExtension(stage.system.toUntyped)
+      val serializer = serialization.findSerializerFor(localT)
+      val bytes = serializer.toBinary(localT)
+
     }
   }
 }

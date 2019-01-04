@@ -28,10 +28,13 @@ val FS2 = "co.fs2"
 val FS2Version = "1.0.2"
 val FS2Core = FS2 %% "fs2-core" % FS2Version
 val FS2IO = FS2 %% "fs2-io" % FS2Version
+val shapeless = "com.chuusai" %% "shapeless" % "2.3.3"
 
-lazy val FS2s = Seq(FS2Core, FS2IO)
+lazy val FS2s = Seq(FS2Core, FS2IO, shapeless, scalaTest)
 
-lazy val libraries = Seq(scalaTest) ++ akkas
+val catsEffect = "org.typelevel" %% "cats-effect" % "1.1.0"
+
+lazy val libraries = Seq(scalaTest, catsEffect) ++ akkas
 
 // Micro site configurations.
 lazy val micrositeConf = Seq(

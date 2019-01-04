@@ -1,10 +1,12 @@
 package example
 
-import akka.stream.scaladsl.{Keep, Sink, Source}
+import cats.effect.{ContextShift, ExitCode, IO, IOApp}
 import task4s.task.{Task, TaskStage}
+import cats.implicits._
+import cats.kernel.{Monoid, Semigroup}
 
-import scala.concurrent.{Await, Future}
 import scala.concurrent.duration._
+import scala.concurrent.duration.FiniteDuration
 
 /**
  * The infamous word count example.
@@ -12,44 +14,54 @@ import scala.concurrent.duration._
  * The word count style stream building via Akka stream can be found at:
  * [[https://doc.akka.io/docs/akka/2.5/stream/stream-cookbook.html#implementing-reduce-by-key]]
  */
-object WordCountApp {
+object WordCountApp extends IOApp {
 
-  val TextString =
-    """
-      |To construct the computation, the basic primitive is Task, which is analog to a computation instance, but with distributed capabilities.
-      |
-      |The Task instance has following properties:
-      |
-      |Stateless.
-      |Serving like a function with topic-based pub/sub model, with one binding for specific topic.
-      |Data coming from different topic served as columnar data for analytics workload.
-      |Can be distinguished for two types, LocalTask and ClusterTask, which refer to capability of executing transparently on cluster or not.
-    """.stripMargin
+  import WordCountTask._
 
-  val MaximumDistinctWords = 4096
+  case class TaskParResult(success: Long = 0L, error: Long = 0L)
 
-  def main(args: Array[String]): Unit = {
-    implicit val stage = TaskStage("WordCountApp")
-    implicit val ec = stage.system.executionContext
+  object TaskParResult {
+    def succ = TaskParResult(1)
+    def err = TaskParResult(0, 1)
 
-    val task = Task.local { implicit stage =>
-      Source
-        .single(TextString)
-        .mapConcat(text => text.split(" ").toList)
-        .groupBy(MaximumDistinctWords, identity)
-        .map(_ -> 1)
-        .reduce((l, r) => (l._1, l._2 + r._2))
-        .mergeSubstreams
-        .toMat(Sink.seq)(Keep.right)
+    implicit val monoid = new Monoid[TaskParResult] {
+      override def combine(x: TaskParResult, y: TaskParResult): TaskParResult =
+        TaskParResult(x.success + y.success, x.error + y.error)
+
+      override def empty: TaskParResult = TaskParResult(0, 0)
+    }
+  }
+
+  import TaskParResult._
+
+  def retryTaskWithBackOff(initialDelay: FiniteDuration,
+                           maxRetries: Int)(implicit stage: TaskStage): IO[Seq[(String, Int)]] = {
+    // TODO: may be we can ensure that the materialized value is already a future and remove this boilerplate.
+    val ioa = Task.spawn(task).flatMap(f => IO.fromFuture(IO.pure(f)))
+    ioa.handleErrorWith { error =>
+      if (maxRetries > 0) {
+        IO.sleep(initialDelay) *> retryTaskWithBackOff(initialDelay * 2, maxRetries - 1)
+      } else
+        IO.raiseError(error)
+    }
+  }
+
+  def loop(times: Int): IO[TaskParResult] =
+    IO.suspend {
+      if (times > 0) {
+        val backoff = retryTaskWithBackOff(300.millis, 5)
+          .map(_ => succ)
+          .handleError(_ => err)
+
+        val eval = (backoff, loop(times - 1)).parMapN((l, r) => l |+| r)
+
+        if (times % 100 == 0) contextShift.shift *> eval else eval
+      } else IO.pure(Monoid.empty[TaskParResult])
     }
 
-    // TODO: may be we can ensure that the materialized value is already a future and remove this boilerplate.
-    val future: Future[Seq[(String, Int)]] = Task.spawn(task).flatMap(f => f)
-
-    val result = Await.result(future, 1.second)
-
-    println(result)
-
-    Await.ready(stage.terminate(), 3.seconds)
-  }
+  override def run(args: List[String]): IO[ExitCode] =
+    for {
+      result <- loop(10000)
+      _ <- IO { println(s"Complete word count task: success ${result.success}, error ${result.error}") }
+    } yield ExitCode.Success
 }

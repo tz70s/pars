@@ -5,6 +5,7 @@ import java.util.UUID.randomUUID
 import akka.actor.typed.Behavior
 import akka.actor.typed.scaladsl.AskPattern._
 import akka.util.Timeout
+import cats.effect.IO
 import task4s.task.TaskProtocol.TaskProtocol
 import task4s.task.TaskStage.TaskStageProtocol
 import task4s.task.par.ParStrategy
@@ -13,10 +14,12 @@ import task4s.task.shape.TaskShape.ShapeBuilder
 import scala.concurrent.Future
 import scala.concurrent.duration._
 import scala.reflect.ClassTag
+import scala.util.{Failure, Success}
 
 abstract class Task[+Mat] private[task4s] (val ref: String, val shape: ShapeBuilder[Mat])(
     implicit val stage: TaskStage
-) extends TaskBehavior {
+) extends TaskBehavior
+    with Serializable {
 
   def tpe: String = this.getClass.getCanonicalName.split("\\.").last
 
@@ -27,6 +30,11 @@ abstract class Task[+Mat] private[task4s] (val ref: String, val shape: ShapeBuil
    * therefore, any value used in task will be initialized once task factory method being get called.
    */
   private val runnable = shape(stage)
+
+  // Initialize section.
+  {
+    stage.tasks += (ref -> this)
+  }
 
   /**
    * Materialized internal runnable graph, but no materialized value get returned.
@@ -60,6 +68,7 @@ private[task4s] class LocalTask[+Mat](ref: String, shape: ShapeBuilder[Mat])(imp
 private[task4s] class ClusterTask[+Mat](ref: String, shape: ShapeBuilder[Mat], val strategy: ParStrategy)(
     implicit stage: TaskStage
 ) extends Task(ref, shape) {
+
   override val behavior: Behavior[TaskProtocol] = pure
 }
 
@@ -127,6 +136,19 @@ object Task {
    * @tparam M Materialized value of shape. (see akka stream)
    * @return Task instance.
    */
+  def cluster[M](name: String)(shape: ShapeBuilder[M])(implicit stage: TaskStage): Task[M] =
+    cluster(ParStrategy.DefaultParStrategy, name)(shape)
+
+  /**
+   * Create a cluster task by passing shape builder closure.
+   *
+   * The ParStrategy use the default strategy [[par.ParStrategy.DefaultParStrategy]].
+   *
+   * @param shape Task data flow shape builder closure.
+   * @param stage Task stage for spawning tasks internally.
+   * @tparam M Materialized value of shape. (see akka stream)
+   * @return Task instance.
+   */
   def cluster[M](shape: ShapeBuilder[M])(implicit stage: TaskStage): Task[M] =
     cluster(ParStrategy.DefaultParStrategy, autoRef)(shape)
 
@@ -138,22 +160,44 @@ object Task {
    * @tparam M Materialized value of shape. (see akka stream)
    * @return Materialized future value.
    */
-  def spawn[M: ClassTag](task: Task[M])(implicit stage: TaskStage): Future[M] = {
+  def spawn[M: ClassTag](task: Task[M])(implicit stage: TaskStage): IO[M] = {
+    import TaskStageProtocol._
+    implicit val ec = stage.system.executionContext
+
+    val futureVal = task match {
+      case l: LocalTask[M] => spawnLocal(l)
+      case c: ClusterTask[M] => spawnCluster(c)
+    }
+
+    IO.async { callback =>
+      futureVal.onComplete {
+        case Success(StageSuccess(_, matValue: M, _)) =>
+          callback(Right(matValue))
+        case Success(StageFailure(cause, _)) =>
+          callback(Left(cause))
+        case Success(msg) =>
+          callback(Left(TaskStageError(s"Unexpected message return via guardian actor during spawning tasks. $msg")))
+        case Failure(cause) =>
+          callback(Left(cause))
+      }
+    }
+  }
+
+  private def spawnLocal[M: ClassTag](task: LocalTask[M])(implicit stage: TaskStage): Future[TaskStageProtocol] = {
     import TaskStageProtocol._
 
     implicit val ec = stage.system.executionContext
-
     // Scheduler is required for ask pattern in akka actor typed API.
     implicit val scheduler = stage.system.scheduler
+    stage.system ? (askRef => LocalStage(task, askRef))
+  }
 
-    val result: Future[TaskStageProtocol] = stage.system ? (askRef => Stage(task, askRef))
+  private def spawnCluster[M: ClassTag](task: ClusterTask[M])(implicit stage: TaskStage): Future[TaskStageProtocol] = {
+    import TaskStageProtocol._
 
-    result.flatMap {
-      case StageSuccess(_, matValue: M, _) =>
-        Future.successful(matValue)
-
-      case _ =>
-        Future.failed(TaskStageError("Unexpected message return via guardian actor during spawning tasks."))
-    }
+    implicit val ec = stage.system.executionContext
+    // Scheduler is required for ask pattern in akka actor typed API.
+    implicit val scheduler = stage.system.scheduler
+    stage.system ? (askRef => ClusterStage(task, askRef))
   }
 }

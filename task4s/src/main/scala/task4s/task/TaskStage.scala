@@ -1,5 +1,7 @@
 package task4s.task
 
+import akka.actor.typed.receptionist.Receptionist.Listing
+import akka.actor.typed.receptionist.{Receptionist, ServiceKey}
 import akka.actor.typed.scaladsl.Behaviors
 import akka.actor.typed.{ActorRef, ActorSystem, Behavior, Terminated}
 import akka.stream.typed.scaladsl.ActorMaterializer
@@ -18,6 +20,8 @@ import scala.util.{Failure, Success}
  */
 class TaskStage private (val name: String) {
   import TaskStage._
+
+  private[task4s] val tasks = TrieMap[String, Task[_]]()
 
   // Make the task stage thread safe.
   private val activeTasks = TrieMap[String, ActorRef[TaskProtocol]]()
@@ -40,12 +44,20 @@ class TaskStage private (val name: String) {
   }
 
   /**
-   * Lookup actor reference via task reference.
+   * Lookup actor reference via task.
    *
-   * @param task Reference of lookup task.
+   * @param task Lookup task.
    * @return Optional value of lookup actor reference.
    */
   private[task4s] def apply[M](task: Task[M]): Option[ActorRef[TaskProtocol]] = activeTasks.get(task.ref)
+
+  /**
+   * Lookup actor reference via task reference.
+   *
+   * @param ref Reference of lookup task.
+   * @return Optional value of lookup actor reference.
+   */
+  private[task4s] def apply(ref: String): Option[ActorRef[TaskProtocol]] = activeTasks.get(ref)
 
   /**
    * Insert actor reference with task reference for lookup.
@@ -63,16 +75,25 @@ object TaskStage {
   /**
    * Task stage related protocols.
    */
-  private[task4s] sealed trait TaskStageProtocol {
+  private[task4s] sealed trait TaskStageProtocol
+
+  sealed trait TaskStageProtocolWithRef extends TaskStageProtocol {
     val replyTo: ActorRef[TaskStageProtocol]
   }
 
   private[task4s] object TaskStageProtocol {
 
-    case class Stage[M: ClassTag](task: Task[M], override val replyTo: ActorRef[TaskStageProtocol])
-        extends TaskStageProtocol
+    case class LocalStage[M: ClassTag](task: Task[M], override val replyTo: ActorRef[TaskStageProtocol])
+        extends TaskStageProtocolWithRef
 
-    sealed trait AfterStaged extends TaskStageProtocol
+    case class ClusterStage[M: ClassTag](task: Task[M], override val replyTo: ActorRef[TaskStageProtocol])
+        extends TaskStageProtocolWithRef
+
+    // Still carry class tag for remote type checking.
+    case class RemoteStage[M: ClassTag](ref: String, override val replyTo: ActorRef[TaskStageProtocol])
+        extends TaskStageProtocolWithRef
+
+    sealed trait AfterStaged extends TaskStageProtocolWithRef
 
     case class StageSuccess[M: ClassTag](ref: ActorRef[TaskProtocol],
                                          matValue: M,
@@ -81,6 +102,8 @@ object TaskStage {
 
     case class StageFailure[M: ClassTag](ex: Throwable, override val replyTo: ActorRef[TaskStageProtocol])
         extends AfterStaged
+
+    case class UpdateClusterStageProviders(set: Set[ActorRef[TaskStageProtocol]]) extends TaskStageProtocol
   }
 
   import TaskStageProtocol._
@@ -88,27 +111,98 @@ object TaskStage {
 
   private implicit val timeout = Task.DefaultTaskSpawnTimeout
 
-  private def guardian(stage: TaskStage): Behavior[TaskStageProtocol] = Behaviors.setup { context =>
-    processStageRequest(stage).orElse {
-      Behaviors.receiveMessagePartial {
-        case aft: AfterStaged =>
-          aft.replyTo ! aft
-          Behaviors.same
+  val StageServiceKey = ServiceKey[TaskStageProtocol]("StageServiceKey")
 
-        case _ =>
-          Behaviors.same
+  private def guardian(stage: TaskStage): Behavior[TaskStageProtocol] =
+    Behaviors.setup { context =>
+      val service = context.spawn(stageService(stage), "StageService")
+      Behaviors.receiveMessage { msg =>
+        service ! msg
+        Behaviors.same
       }
     }
+
+  private def stageService(stage: TaskStage): Behavior[TaskStageProtocol] = Behaviors.setup { context =>
+    context.system.receptionist ! Receptionist.Register(StageServiceKey, context.self)
+
+    val monitor = context.spawn(stageServiceMonitor(Set.empty, context.self), "StageServiceMonitor")
+
+    def internal(set: Set[ActorRef[TaskStageProtocol]]): Behavior[TaskStageProtocol] =
+      taskStageProvider(stage, set).orElse {
+        Behaviors.receiveMessagePartial {
+          case aft: AfterStaged =>
+            aft.replyTo ! aft
+            Behaviors.same
+          case UpdateClusterStageProviders(set) =>
+            internal(set)
+          case _ =>
+            Behaviors.same
+        }
+      }
+
+    internal(Set.empty)
   }
 
-  private def processStageRequest(stage: TaskStage): Behavior[TaskStageProtocol] = Behaviors.receivePartial {
-    case (context, Stage(task, replyTo)) =>
-      val actor = context.spawn(task.behavior, task.ref)
-      context.ask(actor)(Spawn) {
-        case Success(SpawnRetValue(mat)) => StageSuccess(actor, mat, replyTo)
-        case Success(_) => throw new IllegalAccessError("It might be race condition occurred here.")
-        case Failure(ex) => StageFailure(ex, replyTo)
+  private def taskStageProvider(stage: TaskStage, set: Set[ActorRef[TaskStageProtocol]]): Behavior[TaskStageProtocol] =
+    Behaviors.receivePartial {
+      case (context, LocalStage(task, replyTo)) =>
+        // Checkout if existed.
+        val actor = stage(task) match {
+          case Some(ref) => ref
+          case None =>
+            val _actor = context.spawn(task.behavior, task.ref)
+            stage += task -> _actor
+            _actor
+        }
+        context.ask(actor)(Spawn) {
+          case Success(SpawnRetValue(mat)) => StageSuccess(actor, mat, replyTo)
+          case Success(_) => throw new IllegalAccessError("It might be race condition occurred here.")
+          case Failure(ex) => StageFailure(ex, replyTo)
+        }
+        Behaviors.same
+
+      case (_, ClusterStage(task, replyTo)) =>
+        // Temporarily workaround, simply convert cluster stage message into local stage one, and send to the cluster registered actors.
+        // Randomly pick one of registered actors.
+        select(set) match {
+          case Some(ref) => ref ! RemoteStage(task.ref, replyTo)
+          case None => replyTo ! StageFailure(TaskStageError("No available cluster resource."), replyTo)
+        }
+        Behaviors.same
+
+      case (context, RemoteStage(ref, replyTo)) =>
+        stage.tasks.get(ref) match {
+          case Some(task) => context.self ! LocalStage(task, replyTo)
+          case None => replyTo ! StageFailure(TaskNotFoundError(s"Not found task for $ref"), replyTo)
+        }
+        Behaviors.same
+    }
+
+  private def select(set: Set[ActorRef[TaskStageProtocol]]): Option[ActorRef[TaskStageProtocol]] =
+    if (set.nonEmpty) {
+      val idx = scala.util.Random.nextInt(set.size)
+      // iterate to the index?
+      val indexedSeq = set.toIndexedSeq
+      Some(set.head)
+      //if (idx < set.size && idx >= 0) {
+      //  Some(indexedSeq(idx))
+      //} else None
+    } else None
+
+  private def stageServiceMonitor(stages: Set[ActorRef[TaskStageProtocol]],
+                                  parent: ActorRef[TaskStageProtocol]): Behavior[Listing] = Behaviors.setup { ctx =>
+    ctx.system.receptionist ! Receptionist.Subscribe(StageServiceKey, ctx.self)
+
+    def internal(lst: Set[ActorRef[TaskStageProtocol]]): Behavior[Listing] =
+      Behaviors.receiveMessage {
+        case StageServiceKey.Listing(listing) if listing.nonEmpty =>
+          ctx.log.info(s"Stage service listing update, now available: $listing")
+          parent ! UpdateClusterStageProviders(listing)
+          internal(listing)
+
+        case msg =>
+          Behaviors.same
       }
-      Behaviors.same
+    internal(Set.empty)
   }
 }
