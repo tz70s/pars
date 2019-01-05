@@ -6,7 +6,6 @@ class TaskBehaviorSpec extends TaskStageExtension with Matchers {
 
   "Task Behavior" should {
     "evaluate internal shape" in {
-      val localT = Task.local("DummyTask")(TestDoubles.empty)
 
       // No effect for visible check currently.
       // Pending tests when materialized value passed back via future.

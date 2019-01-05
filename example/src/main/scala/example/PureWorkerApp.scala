@@ -8,7 +8,7 @@ object PureWorkerApp extends IOApp {
 
   override def run(args: List[String]): IO[ExitCode] =
     for {
-      _ <- IO { println(TextString) }
+      _ <- IO { println(MaximumDistinctWords) }
       _ <- IO.never
     } yield ExitCode.Success
 }

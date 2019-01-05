@@ -1,6 +1,6 @@
 package task4s.task
 
-import cats.effect.IO
+import cats.effect.{ContextShift, IO}
 import org.scalatest.WordSpec
 import cats.implicits._
 import fs2.Stream
@@ -9,7 +9,7 @@ import scala.concurrent.ExecutionContext
 
 class ChannelSpec extends WordSpec {
 
-  implicit val cs = IO.contextShift(ExecutionContext.global)
+  implicit val cs: ContextShift[IO] = IO.contextShift(ExecutionContext.global)
 
   "Channel" should {
 

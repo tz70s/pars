@@ -2,16 +2,16 @@ package task4s.task
 
 import akka.actor.typed.receptionist.Receptionist.Listing
 import akka.actor.typed.receptionist.{Receptionist, ServiceKey}
-import akka.actor.typed.scaladsl.Behaviors
+import akka.actor.typed.scaladsl.{Behaviors, StashBuffer}
 import akka.actor.typed.{ActorRef, ActorSystem, Behavior, Terminated}
 import akka.stream.typed.scaladsl.ActorMaterializer
+import akka.util.Timeout
 import task4s.task.TaskProtocol.TaskProtocol
 import task4s.task.par.ClusterExtension
 
 import scala.collection.concurrent.TrieMap
 import scala.concurrent.Future
 import scala.reflect.ClassTag
-import scala.util.{Failure, Success}
 
 /**
  * The execution instance and associated context.
@@ -109,9 +109,9 @@ object TaskStage {
   import TaskStageProtocol._
   import TaskProtocol._
 
-  private implicit val timeout = Task.DefaultTaskSpawnTimeout
+  private implicit val timeout: Timeout = Task.DefaultTaskSpawnTimeout
 
-  val StageServiceKey = ServiceKey[TaskStageProtocol]("StageServiceKey")
+  val StageServiceKey: ServiceKey[TaskStageProtocol] = ServiceKey[TaskStageProtocol]("StageServiceKey")
 
   private def guardian(stage: TaskStage): Behavior[TaskStageProtocol] =
     Behaviors.setup { context =>
@@ -125,22 +125,35 @@ object TaskStage {
   private def stageService(stage: TaskStage): Behavior[TaskStageProtocol] = Behaviors.setup { context =>
     context.system.receptionist ! Receptionist.Register(StageServiceKey, context.self)
 
-    val monitor = context.spawn(stageServiceMonitor(Set.empty, context.self), "StageServiceMonitor")
+    context.spawn(stageServiceMonitor(Set.empty, context.self), "StageServiceMonitor")
 
-    def internal(set: Set[ActorRef[TaskStageProtocol]]): Behavior[TaskStageProtocol] =
+    val StashBufferSize = 100
+
+    val buffer = StashBuffer[TaskStageProtocol](StashBufferSize)
+
+    def init(): Behavior[TaskStageProtocol] = Behaviors.receiveMessage {
+      case UpdateClusterStageProviders(set) if set.nonEmpty =>
+        context.log.info(s"Bumping task request queue of size ${buffer.size}")
+        buffer.unstashAll(context, active(set))
+      case msg =>
+        if (!buffer.isFull) buffer.stash(msg) else context.log.warning(s"Stash buffer overflow, dropping message $msg")
+        Behaviors.same
+    }
+
+    def active(set: Set[ActorRef[TaskStageProtocol]]): Behavior[TaskStageProtocol] =
       taskStageProvider(stage, set).orElse {
         Behaviors.receiveMessagePartial {
           case aft: AfterStaged =>
             aft.replyTo ! aft
             Behaviors.same
-          case UpdateClusterStageProviders(set) =>
-            internal(set)
+          case UpdateClusterStageProviders(_set) =>
+            active(_set)
           case _ =>
             Behaviors.same
         }
       }
 
-    internal(Set.empty)
+    init()
   }
 
   private def taskStageProvider(stage: TaskStage, set: Set[ActorRef[TaskStageProtocol]]): Behavior[TaskStageProtocol] =
@@ -154,11 +167,7 @@ object TaskStage {
             stage += task -> _actor
             _actor
         }
-        context.ask(actor)(Spawn) {
-          case Success(SpawnRetValue(mat)) => StageSuccess(actor, mat, replyTo)
-          case Success(_) => throw new IllegalAccessError("It might be race condition occurred here.")
-          case Failure(ex) => StageFailure(ex, replyTo)
-        }
+        actor ! Spawn(replyTo)
         Behaviors.same
 
       case (_, ClusterStage(task, replyTo)) =>
@@ -181,12 +190,10 @@ object TaskStage {
   private def select(set: Set[ActorRef[TaskStageProtocol]]): Option[ActorRef[TaskStageProtocol]] =
     if (set.nonEmpty) {
       val idx = scala.util.Random.nextInt(set.size)
-      // iterate to the index?
       val indexedSeq = set.toIndexedSeq
-      Some(set.head)
-      //if (idx < set.size && idx >= 0) {
-      //  Some(indexedSeq(idx))
-      //} else None
+      if (idx < set.size && idx >= 0) {
+        Some(indexedSeq(idx))
+      } else None
     } else None
 
   private def stageServiceMonitor(stages: Set[ActorRef[TaskStageProtocol]],
@@ -200,7 +207,7 @@ object TaskStage {
           parent ! UpdateClusterStageProviders(listing)
           internal(listing)
 
-        case msg =>
+        case _ =>
           Behaviors.same
       }
     internal(Set.empty)

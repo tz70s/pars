@@ -4,7 +4,20 @@
 ThisBuild / name := "task4s"
 ThisBuild / version := "0.1"
 ThisBuild / scalaVersion := "2.12.8"
-ThisBuild / scalacOptions ++= Seq("-Ypartial-unification", "-language:higherKinds")
+ThisBuild / scalacOptions ++= Seq(
+  "-deprecation",
+  "-encoding", "utf-8",
+  "-explaintypes",
+  "-feature",
+  "-language:existentials",
+  "-language:experimental.macros",
+  "-language:implicitConversions",
+  "-unchecked",
+  "-Xfatal-warnings",
+  "-Ypartial-unification",
+  "-language:higherKinds",
+  "-Ywarn-infer-any"
+)
 
 // Akka dependencies.
 val akkaVersion = "2.5.19"
@@ -60,6 +73,24 @@ lazy val micrositeConf = Seq(
     "white-color" -> "#FFFFFF"
   )
 )
+
+val JvmOpts = Seq(
+  "-Xms512M",
+  "-Xmx4G",
+  "-XX:+UseG1GC",
+  "-Dcom.sun.management.jmxremote.port=9010",
+  "-Dcom.sun.management.jmxremote.authenticate=false",
+  "-Dcom.sun.management.jmxremote.ssl=false",
+  "-Djava.rmi.server.hostname=localhost"
+)
+
+lazy val jvmForkSettings = Seq(
+  run / fork := true,
+  run / javaOptions ++= JvmOpts,
+  reStart / javaOptions ++= JvmOpts,
+  outputStrategy := Some(StdoutOutput)
+)
+
 lazy val task4s = (project in file("task4s"))
   .settings(libraryDependencies ++= libraries)
 
@@ -69,10 +100,11 @@ lazy val site = (project in file("site"))
 
 lazy val example = (project in file("example"))
   .dependsOn(task4s)
+  .settings(jvmForkSettings)
 
 lazy val `task4s-jmh` = (project in file("task4s-jmh"))
   .enablePlugins(JmhPlugin)
-  .dependsOn(task4s)
+  .dependsOn(task4s, example)
 
 lazy val `task4s-fs2` = (project in file("task4s-fs2"))
   .settings(libraryDependencies ++= FS2s ++ Seq(logback, logging))

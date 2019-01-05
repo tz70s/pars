@@ -1,29 +1,31 @@
 package example
 
-import akka.stream.scaladsl.{Keep, Sink, Source}
+import java.nio.file.{Path, Paths}
+
+import akka.stream.scaladsl.{Flow, Keep, RunnableGraph, Sink, Source}
+import task4s.task.par.ParStrategy
 import task4s.task.{Task, TaskStage}
+
+import scala.collection.immutable
+import scala.concurrent.Future
 
 object WordCountTask {
 
-  val TextString =
-    """
-      |To construct the computation, the basic primitive is Task, which is analog to a computation instance, but with distributed capabilities.
-      |
-      |The Task instance has following properties:
-      |
-      |Stateless.
-      |Serving like a function with topic-based pub/sub model, with one binding for specific topic.
-      |Data coming from different topic served as columnar data for analytics workload.
-      |Can be distinguished for two types, LocalTask and ClusterTask, which refer to capability of executing transparently on cluster or not.
-    """.stripMargin
-
   val MaximumDistinctWords = 4096
 
-  implicit val stage = TaskStage("WordCountApp")
+  implicit val stage: TaskStage = TaskStage("WordCountApp")
 
-  val task = Task.cluster("WordCount") { implicit stage =>
+  val Poetry = """Humpty Dumpty sat on a wall,
+                 |Humpty Dumpty had a great fall.
+                 |All the king's horses and all the king's men
+                 |Couldn't put Humpty together again."""
+
+  val wordCount: TaskStage => RunnableGraph[
+    Future[immutable.Seq[(String, Int)]]
+  ] = { _: TaskStage =>
     Source
-      .single(TextString)
+      .repeat(Poetry)
+      .take(10000)
       .mapConcat(text => text.split("\n").toList)
       .map(line => line.stripMargin)
       .mapConcat(line => line.split(" ").toList)
@@ -33,4 +35,12 @@ object WordCountTask {
       .mergeSubstreams
       .toMat(Sink.seq)(Keep.right)
   }
+
+  val singleTask: Task[
+    Future[immutable.Seq[(String, Int)]]
+  ] = Task.cluster("WordCountSingle")(wordCount)
+
+  val replicatedTasks: Task[
+    Future[immutable.Seq[(String, Int)]]
+  ] = Task.cluster("WordCountReplicated", ParStrategy(100, Set.empty))(wordCount)
 }

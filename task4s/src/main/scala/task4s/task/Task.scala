@@ -1,9 +1,10 @@
 package task4s.task
 
-import java.util.UUID.randomUUID
-
+import akka.actor.Scheduler
 import akka.actor.typed.Behavior
 import akka.actor.typed.scaladsl.AskPattern._
+import akka.actor.typed.scaladsl.Behaviors
+import akka.stream.typed.scaladsl.ActorMaterializer
 import akka.util.Timeout
 import cats.effect.IO
 import task4s.task.TaskProtocol.TaskProtocol
@@ -11,7 +12,7 @@ import task4s.task.TaskStage.TaskStageProtocol
 import task4s.task.par.ParStrategy
 import task4s.task.shape.TaskShape.ShapeBuilder
 
-import scala.concurrent.Future
+import scala.concurrent.{ExecutionContextExecutor, Future}
 import scala.concurrent.duration._
 import scala.reflect.ClassTag
 import scala.util.{Failure, Success}
@@ -23,7 +24,7 @@ abstract class Task[+Mat] private[task4s] (val ref: String, val shape: ShapeBuil
 
   def tpe: String = this.getClass.getCanonicalName.split("\\.").last
 
-  private implicit val mat = stage.materializer
+  private implicit val mat: ActorMaterializer = stage.materializer
 
   /**
    * The initialization of shape will be constructed here,
@@ -69,14 +70,23 @@ private[task4s] class ClusterTask[+Mat](ref: String, shape: ShapeBuilder[Mat], v
     implicit stage: TaskStage
 ) extends Task(ref, shape) {
 
-  override val behavior: Behavior[TaskProtocol] = pure
+  override val behavior: Behavior[TaskProtocol] = Behaviors.setup { ctx =>
+    val nrOfWorker = strategy.replicas
+    val actors = (1 to nrOfWorker).map(_ => ctx.spawnAnonymous(pure))
+
+    def internal(target: Int): Behavior[TaskProtocol] =
+      Behaviors.receiveMessage { msg =>
+        actors(target) ! msg
+        if (target < nrOfWorker - 1) internal(target + 1) else internal(0)
+      }
+
+    internal(0)
+  }
 }
 
 object Task {
 
-  implicit val DefaultTaskSpawnTimeout = Timeout(1500.millis)
-
-  private def autoRef: String = s"default-${randomUUID().toString}"
+  implicit val DefaultTaskSpawnTimeout: Timeout = Timeout(3000.millis)
 
   /**
    * Create a local task by passing shape builder closure.
@@ -91,17 +101,6 @@ object Task {
     new LocalTask(name, shape)
 
   /**
-   * Create a local task by passing shape builder closure.
-   *
-   * @param shape Task data flow shape builder closure.
-   * @param stage Task stage for spawning tasks internally.
-   * @tparam M Materialized value of shape. (see akka stream)
-   * @return Task instance.
-   */
-  def local[M](shape: ShapeBuilder[M])(implicit stage: TaskStage): Task[M] =
-    local(autoRef)(shape)
-
-  /**
    * Create a cluster task by passing shape builder closure.
    *
    * @param strategy ParStrategy, indicates the parallel settings of cluster aware task allocation.
@@ -111,20 +110,8 @@ object Task {
    * @tparam M Materialized value of shape. (see akka stream)
    * @return Task instance.
    */
-  def cluster[M](strategy: ParStrategy, name: String)(shape: ShapeBuilder[M])(implicit stage: TaskStage): Task[M] =
+  def cluster[M](name: String, strategy: ParStrategy)(shape: ShapeBuilder[M])(implicit stage: TaskStage): Task[M] =
     new ClusterTask[M](name, shape, strategy)
-
-  /**
-   * Create a cluster task by passing shape builder closure.
-   *
-   * @param strategy ParStrategy, indicates the parallel settings of cluster aware task allocation.
-   * @param shape Task data flow shape builder closure.
-   * @param stage Task stage for spawning tasks internally.
-   * @tparam M Materialized value of shape. (see akka stream)
-   * @return Task instance.
-   */
-  def cluster[M](strategy: ParStrategy)(shape: ShapeBuilder[M])(implicit stage: TaskStage): Task[M] =
-    cluster(strategy, autoRef)(shape)
 
   /**
    * Create a cluster task by passing shape builder closure.
@@ -137,20 +124,7 @@ object Task {
    * @return Task instance.
    */
   def cluster[M](name: String)(shape: ShapeBuilder[M])(implicit stage: TaskStage): Task[M] =
-    cluster(ParStrategy.DefaultParStrategy, name)(shape)
-
-  /**
-   * Create a cluster task by passing shape builder closure.
-   *
-   * The ParStrategy use the default strategy [[par.ParStrategy.DefaultParStrategy]].
-   *
-   * @param shape Task data flow shape builder closure.
-   * @param stage Task stage for spawning tasks internally.
-   * @tparam M Materialized value of shape. (see akka stream)
-   * @return Task instance.
-   */
-  def cluster[M](shape: ShapeBuilder[M])(implicit stage: TaskStage): Task[M] =
-    cluster(ParStrategy.DefaultParStrategy, autoRef)(shape)
+    cluster(name, ParStrategy.DefaultParStrategy)(shape)
 
   /**
    * Spawn a defined task, same interface for cluster or local task.
@@ -162,12 +136,9 @@ object Task {
    */
   def spawn[M: ClassTag](task: Task[M])(implicit stage: TaskStage): IO[M] = {
     import TaskStageProtocol._
-    implicit val ec = stage.system.executionContext
+    implicit val ec: ExecutionContextExecutor = stage.system.executionContext
 
-    val futureVal = task match {
-      case l: LocalTask[M] => spawnLocal(l)
-      case c: ClusterTask[M] => spawnCluster(c)
-    }
+    val futureVal = askForStage(task)
 
     IO.async { callback =>
       futureVal.onComplete {
@@ -183,21 +154,16 @@ object Task {
     }
   }
 
-  private def spawnLocal[M: ClassTag](task: LocalTask[M])(implicit stage: TaskStage): Future[TaskStageProtocol] = {
+  private def askForStage[M: ClassTag](task: Task[M])(implicit stage: TaskStage): Future[TaskStageProtocol] = {
     import TaskStageProtocol._
 
-    implicit val ec = stage.system.executionContext
+    implicit val ec: ExecutionContextExecutor = stage.system.executionContext
     // Scheduler is required for ask pattern in akka actor typed API.
-    implicit val scheduler = stage.system.scheduler
-    stage.system ? (askRef => LocalStage(task, askRef))
-  }
+    implicit val scheduler: Scheduler = stage.system.scheduler
 
-  private def spawnCluster[M: ClassTag](task: ClusterTask[M])(implicit stage: TaskStage): Future[TaskStageProtocol] = {
-    import TaskStageProtocol._
-
-    implicit val ec = stage.system.executionContext
-    // Scheduler is required for ask pattern in akka actor typed API.
-    implicit val scheduler = stage.system.scheduler
-    stage.system ? (askRef => ClusterStage(task, askRef))
+    task match {
+      case l: LocalTask[M] => stage.system ? (askRef => LocalStage(l, askRef))
+      case c: ClusterTask[M] => stage.system ? (askRef => ClusterStage(c, askRef))
+    }
   }
 }
