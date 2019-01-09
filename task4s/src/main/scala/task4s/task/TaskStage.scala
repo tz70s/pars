@@ -151,7 +151,6 @@ object TaskStage {
       taskStageProvider(stage, set).orElse {
         Behaviors.receiveMessagePartial {
           case aft: AfterStaged =>
-            context.log.info(s"Get stage result: $aft")
             aft.replyTo ! aft
             Behaviors.same
           case UpdateClusterStageProviders(_set) =>

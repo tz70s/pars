@@ -86,7 +86,7 @@ private[task4s] class ClusterTask[+Mat](ref: String, shape: ShapeBuilder[Mat], v
 
 object Task {
 
-  implicit val DefaultTaskSpawnTimeout: Timeout = Timeout(80.millis)
+  implicit val DefaultTaskSpawnTimeout: Timeout = Timeout(300.millis)
 
   /**
    * Create a local task by passing shape builder closure.

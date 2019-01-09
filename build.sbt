@@ -36,6 +36,8 @@ val scalaTest = "org.scalatest" %% "scalatest" % scalaTestVersion % Test
 val logback = "ch.qos.logback" % "logback-classic" % "1.2.3"
 val logging = "com.typesafe.scala-logging" %% "scala-logging" % "3.9.0"
 
+val pureConfig = "com.github.pureconfig" %% "pureconfig" % "0.10.1"
+
 val FS2 = "co.fs2"
 val FS2Version = "1.0.2"
 val FS2Core = FS2 %% "fs2-core" % FS2Version
@@ -105,7 +107,7 @@ lazy val `task4s-jmh` = (project in file("task4s-jmh"))
   .dependsOn(task4s, example)
 
 lazy val `task4s-fs2` = (project in file("task4s-fs2"))
-  .settings(libraryDependencies ++= FS2s ++ Seq(logback, logging))
+  .settings(libraryDependencies ++= FS2s ++ Seq(logback, logging, pureConfig))
 
 lazy val `task4s-exp` = (project in file("task4s-exp"))
   .settings(libraryDependencies ++= Seq(catsEffect, scalaTest))

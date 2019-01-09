@@ -1,37 +1,14 @@
 package task4s.task
 
-import java.nio.file.{NoSuchFileException, Paths}
-import java.util.concurrent.Executors
-
 import cats.effect._
-import fs2.Stream
-import fs2.io.file._
-import fs2.text
-import cats.implicits._
-
-import scala.concurrent.{ExecutionContext, ExecutionContextExecutor}
+import task4s.remote.tcp.AsyncChannelProvider
+import cats.syntax.apply._
+import task4s.remote.Service
 
 object Main extends IOApp {
 
-  val blockingExecutor: ExecutionContextExecutor = ExecutionContext.fromExecutor(Executors.newWorkStealingPool(8))
+  implicit val acg = AsyncChannelProvider.get(8)
 
-  def splitter[F[_]: Sync: ContextShift]: Stream[F, String] = {
-    val content = readAll[F](Paths.get("text.txt"), blockingExecutor, 16)
-    content.through(text.utf8Decode).through(text.lines)
-  }
-
-  def fileNotFound[F[_]: Sync](throwable: Throwable): Stream[F, Unit] =
-    Stream.eval(Sync[F].delay(println(s"Can't get the given file: ${throwable.getMessage}")))
-
-  def printFileContent[F[_]: Sync: ContextShift]: Stream[F, Unit] = {
-    val showOffContent = for {
-      content <- splitter
-      _ <- Stream.eval(Sync[F].delay { println(content) })
-    } yield ()
-
-    showOffContent.handleErrorWith { case t: NoSuchFileException => fileNotFound[F](t) }
-  }
-
-  def run(args: List[String]): IO[ExitCode] =
-    printFileContent[IO].compile.drain.as(ExitCode.Success)
+  override def run(args: List[String]): IO[ExitCode] =
+    Service[IO].compile.drain *> IO.pure(ExitCode.Success)
 }
