@@ -1,10 +1,11 @@
 package example
 
 import cats.effect.{ExitCode, IO, IOApp}
-import task4s.task.Task
+import task4s.task.{Task, TaskStage}
 import cats.implicits._
+import com.typesafe.config.ConfigFactory
 
-import scala.concurrent.Future
+import scala.concurrent.{Await, Future}
 import scala.concurrent.duration._
 import scala.concurrent.duration.FiniteDuration
 
@@ -16,7 +17,14 @@ import scala.concurrent.duration.FiniteDuration
  */
 object WordCountApp extends IOApp {
 
-  import WordCountTask._
+  val conf =
+    ConfigFactory.parseString("""akka.remote.netty.tcp.port = 2552""".stripMargin).withFallback(ConfigFactory.load())
+
+  implicit val stage: TaskStage = TaskStage("WordCountApp", conf)
+
+  sys.addShutdownHook { Await.ready(stage.terminate(), 3.second) }
+
+  val tasks = new WordCountTask
 
   import TaskSpawnRecord._
 
@@ -31,7 +39,11 @@ object WordCountApp extends IOApp {
     val ioa = Task.spawn(task).flatMap(f => IO.fromFuture(IO.pure(f)))
     ioa.handleErrorWith { error =>
       if (maxRetries > 0) {
-        IO.sleep(initialDelay) *> retryTaskWithBackOff(task, initialDelay * 2, maxRetries - 1)
+        for {
+          _ <- IO.sleep(initialDelay)
+          _ <- IO { println(s"Start retry for task $task cause error ${error.getMessage}") }
+          retry <- retryTaskWithBackOff(task, initialDelay * 2, maxRetries - 1)
+        } yield retry
       } else
         IO.raiseError(error)
     }
@@ -39,9 +51,8 @@ object WordCountApp extends IOApp {
 
   def loop(task: WordCountTaskTpe, times: Long): IO[TaskSpawnRecord] = {
     val backOff = retryTaskWithBackOff(task, 300.millis, 5)
-      .flatMap(wcs => IO { println(wcs); wcs })
       .map(_ => succ)
-      .handleError(_ => err)
+      .handleErrorWith(ex => IO { println(ex.getMessage) } *> IO.pure(err))
 
     // Note that the parSequence canceled tasks if any task got failed, however, we've recovered all failure case into error record.
     (1L to times).map(_ => backOff).toList.parSequence.flatMap(list => IO { list.reduce(_ |+| _) })
@@ -50,8 +61,9 @@ object WordCountApp extends IOApp {
   def loopSeq(task: WordCountTaskTpe, times: Long): IO[TaskSpawnRecord] =
     if (times > 0) {
       val backOff = retryTaskWithBackOff(task, 300.millis, 5)
+        .flatMap(wc => IO { println(wc) })
         .map(_ => succ)
-        .handleError(_ => err)
+        .handleErrorWith(ex => IO { println(ex.getMessage) } *> IO.pure(err))
 
       backOff.flatMap { l =>
         loopSeq(task, times - 1).map(r => r |+| l)
@@ -60,7 +72,7 @@ object WordCountApp extends IOApp {
 
   override def run(args: List[String]): IO[ExitCode] =
     for {
-      result <- loop(singleTask, NrOfRuns)
+      result <- loopSeq(tasks.singleTask, NrOfRuns)
       _ <- IO { println(s"Complete word count task: success ${result.success}, error ${result.error}") }
     } yield ExitCode.Success
 }

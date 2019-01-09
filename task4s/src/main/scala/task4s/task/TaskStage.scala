@@ -6,19 +6,21 @@ import akka.actor.typed.scaladsl.{Behaviors, StashBuffer}
 import akka.actor.typed.{ActorRef, ActorSystem, Behavior, Terminated}
 import akka.stream.typed.scaladsl.ActorMaterializer
 import akka.util.Timeout
+import com.typesafe.config.Config
 import task4s.task.TaskProtocol.TaskProtocol
 import task4s.task.par.ClusterExtension
 
 import scala.collection.concurrent.TrieMap
 import scala.concurrent.Future
 import scala.reflect.ClassTag
+import scala.util.{Failure, Success}
 
 /**
  * The execution instance and associated context.
  *
  * @param name Name for task stage namespace, will propagate to underlying [[akka.actor.typed.ActorSystem]] name.
  */
-class TaskStage private (val name: String) {
+class TaskStage private (val name: String, config: Option[Config]) {
   import TaskStage._
 
   private[task4s] val tasks = TrieMap[String, Task[_]]()
@@ -29,7 +31,10 @@ class TaskStage private (val name: String) {
   /**
    * Access internal actor system for flexibility, i.e. spawn custom actor, using dispatcher, etc.
    */
-  implicit val system: ActorSystem[TaskStageProtocol] = ActorSystem(guardian(this), name)
+  implicit val system: ActorSystem[TaskStageProtocol] = config match {
+    case Some(c) => ActorSystem(guardian(this), name, c)
+    case None => ActorSystem(guardian(this), name)
+  }
 
   /**
    * Stream materializer factored via default actor system.
@@ -70,7 +75,9 @@ class TaskStage private (val name: String) {
 
 object TaskStage {
 
-  def apply(name: String): TaskStage = new TaskStage(name)
+  def apply(name: String): TaskStage = new TaskStage(name, None)
+
+  def apply(name: String, config: Config) = new TaskStage(name, Some(config))
 
   /**
    * Task stage related protocols.
@@ -144,6 +151,7 @@ object TaskStage {
       taskStageProvider(stage, set).orElse {
         Behaviors.receiveMessagePartial {
           case aft: AfterStaged =>
+            context.log.info(s"Get stage result: $aft")
             aft.replyTo ! aft
             Behaviors.same
           case UpdateClusterStageProviders(_set) =>
@@ -163,11 +171,16 @@ object TaskStage {
         val actor = stage(task) match {
           case Some(ref) => ref
           case None =>
+            context.log.info(s"Starting new actor for task - ${task.ref}")
             val _actor = context.spawn(task.behavior, task.ref)
             stage += task -> _actor
             _actor
         }
-        actor ! Spawn(replyTo)
+        context.ask(actor)(Spawn) {
+          case Success(SpawnRetValue(mat)) => StageSuccess(actor, mat, replyTo)
+          case Success(_) => throw new IllegalAccessError("It might be race condition occurred here.")
+          case Failure(exception) => StageFailure(exception, replyTo)
+        }
         Behaviors.same
 
       case (_, ClusterStage(task, replyTo)) =>
@@ -210,6 +223,7 @@ object TaskStage {
         case _ =>
           Behaviors.same
       }
+
     internal(Set.empty)
   }
 }

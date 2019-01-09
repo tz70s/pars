@@ -1,13 +1,14 @@
 package task4s
 
 import cats.effect.{ContextShift, IO, Timer}
-import task4s.task.Task
+import task4s.task.{Task, TaskStage}
 import cats.implicits._
 
 import scala.concurrent.duration._
 import java.util.concurrent.TimeUnit
 
-import example.TaskSpawnRecord
+import com.typesafe.config.ConfigFactory
+import example.{TaskSpawnRecord, WordCountTask}
 import org.openjdk.jmh.annotations._
 
 import scala.concurrent.{Await, Future}
@@ -21,9 +22,17 @@ import scala.concurrent.{Await, Future}
 class WordCountBench {
 
   import TaskSpawnRecord._
-  import example.WordCountTask._
 
   val NrOfRuns = 10000L
+
+  val conf =
+    ConfigFactory.parseString("""akka.remote.netty.tcp.port = 2551""".stripMargin).withFallback(ConfigFactory.load())
+
+  implicit val stage: TaskStage = TaskStage("WordCountApp", conf)
+
+  sys.addShutdownHook { Await.ready(stage.terminate(), 3.second) }
+
+  val tasks = new WordCountTask
 
   type WordCountTaskTpe = Task[Future[Seq[(String, Int)]]]
 
@@ -65,23 +74,23 @@ class WordCountBench {
 
   @Benchmark
   def syncRunSingleTask(): Seq[(String, Int)] =
-    retryTaskWithBackOff(singleTask, 300.millis, 5).unsafeRunSync()
+    retryTaskWithBackOff(tasks.singleTask, 300.millis, 5).unsafeRunSync()
 
   @Benchmark
   def syncRunReplicatedTask(): Seq[(String, Int)] =
-    retryTaskWithBackOff(replicatedTasks, 300.millis, 5).unsafeRunSync()
+    retryTaskWithBackOff(tasks.replicatedTasks, 300.millis, 5).unsafeRunSync()
 
   @Benchmark
   def parLoopWithSingleTask(): TaskSpawnRecord =
-    loop(singleTask, NrOfRuns).unsafeRunSync()
+    loop(tasks.singleTask, NrOfRuns).unsafeRunSync()
 
   @Benchmark
   def parLoopWithReplicatedTask(): TaskSpawnRecord =
-    loop(replicatedTasks, NrOfRuns).unsafeRunSync()
+    loop(tasks.replicatedTasks, NrOfRuns).unsafeRunSync()
 
   // This is extremely slow, suppress benchmarking this; open it if required for concurrency test.
   def seqLoopWithSingleTask(): TaskSpawnRecord =
-    loopSeq(singleTask, NrOfRuns).unsafeRunSync()
+    loopSeq(tasks.singleTask, NrOfRuns).unsafeRunSync()
 
   @TearDown
   def shutdown(): Unit = {

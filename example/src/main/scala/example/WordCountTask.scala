@@ -1,8 +1,6 @@
 package example
 
-import java.nio.file.{Path, Paths}
-
-import akka.stream.scaladsl.{Flow, Keep, RunnableGraph, Sink, Source}
+import akka.stream.scaladsl.{Keep, RunnableGraph, Sink, Source}
 import task4s.task.par.ParStrategy
 import task4s.task.{Task, TaskStage}
 
@@ -13,12 +11,16 @@ object WordCountTask {
 
   val MaximumDistinctWords = 4096
 
-  implicit val stage: TaskStage = TaskStage("WordCountApp")
+  def apply(implicit stage: TaskStage): WordCountTask = new WordCountTask
 
   val Poetry = """Humpty Dumpty sat on a wall,
                  |Humpty Dumpty had a great fall.
                  |All the king's horses and all the king's men
                  |Couldn't put Humpty together again."""
+}
+
+class WordCountTask(implicit stage: TaskStage) {
+  import WordCountTask._
 
   val wordCount: TaskStage => RunnableGraph[
     Future[immutable.Seq[(String, Int)]]

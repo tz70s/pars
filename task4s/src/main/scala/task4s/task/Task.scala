@@ -86,7 +86,7 @@ private[task4s] class ClusterTask[+Mat](ref: String, shape: ShapeBuilder[Mat], v
 
 object Task {
 
-  implicit val DefaultTaskSpawnTimeout: Timeout = Timeout(3000.millis)
+  implicit val DefaultTaskSpawnTimeout: Timeout = Timeout(80.millis)
 
   /**
    * Create a local task by passing shape builder closure.
@@ -149,6 +149,7 @@ object Task {
         case Success(msg) =>
           callback(Left(TaskStageError(s"Unexpected message return via guardian actor during spawning tasks. $msg")))
         case Failure(cause) =>
+          println(s"Failure on future completion $cause")
           callback(Left(cause))
       }
     }

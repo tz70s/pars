@@ -2,8 +2,6 @@ package task4s.task
 
 import akka.actor.typed.scaladsl.Behaviors
 import akka.actor.typed.{ActorRef, Behavior, PostStop}
-import task4s.task.TaskStage.TaskStageProtocol
-import task4s.task.TaskStage.TaskStageProtocol.StageSuccess
 
 import scala.reflect.ClassTag
 
@@ -33,7 +31,7 @@ private[task4s] trait TaskBehavior { this: Task[_] =>
     Behaviors.receiveMessage {
       case Spawn(replyTo) =>
         val matValue = spawn()
-        replyTo ! StageSuccess(ctx.self, matValue, replyTo)
+        replyTo ! SpawnRetValue(matValue)
         Behaviors.same
 
       case Shutdown =>
@@ -54,7 +52,7 @@ private[task4s] trait TaskBehavior { this: Task[_] =>
 private[task4s] object TaskProtocol {
   sealed trait TaskProtocol
 
-  case class Spawn(replyTo: ActorRef[TaskStageProtocol]) extends TaskProtocol
+  case class Spawn(replyTo: ActorRef[TaskProtocol]) extends TaskProtocol
   case class SpawnRetValue[M: ClassTag](mat: M) extends TaskProtocol
   case object Shutdown extends TaskProtocol
 }

@@ -13,7 +13,6 @@ ThisBuild / scalacOptions ++= Seq(
   "-language:experimental.macros",
   "-language:implicitConversions",
   "-unchecked",
-  "-Xfatal-warnings",
   "-Ypartial-unification",
   "-language:higherKinds",
   "-Ywarn-infer-any"
@@ -78,7 +77,6 @@ val JvmOpts = Seq(
   "-Xms512M",
   "-Xmx4G",
   "-XX:+UseG1GC",
-  "-Dcom.sun.management.jmxremote.port=9010",
   "-Dcom.sun.management.jmxremote.authenticate=false",
   "-Dcom.sun.management.jmxremote.ssl=false",
   "-Djava.rmi.server.hostname=localhost"
@@ -108,6 +106,9 @@ lazy val `task4s-jmh` = (project in file("task4s-jmh"))
 
 lazy val `task4s-fs2` = (project in file("task4s-fs2"))
   .settings(libraryDependencies ++= FS2s ++ Seq(logback, logging))
+
+lazy val `task4s-exp` = (project in file("task4s-exp"))
+  .settings(libraryDependencies ++= Seq(catsEffect, scalaTest))
 
 lazy val root = (project in file("."))
   .aggregate(task4s, site, example, `task4s-jmh`)
