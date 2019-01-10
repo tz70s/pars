@@ -6,10 +6,11 @@ import java.nio.channels.AsynchronousChannelGroup
 import java.nio.channels.spi.AsynchronousChannelProvider
 import java.util.concurrent.Executors
 
-import cats.effect.{Concurrent, ContextShift, Sync}
-import com.typesafe.scalalogging.Logger
+import cats.effect.{Concurrent, ContextShift}
 import fs2.Stream
 import fs2.io.tcp.Socket
+import io.chrisdavenport.log4cats.Logger
+import io.chrisdavenport.log4cats.slf4j.Slf4jLogger
 
 case class TcpSocketConfig(hostname: String, port: Int)
 
@@ -23,13 +24,13 @@ class SocketServerStream[F[_]: Concurrent: ContextShift](
     config: TcpSocketConfig = pureconfig.loadConfigOrThrow[TcpSocketConfig]("task4s.remote.tcp")
 )(implicit acg: AsynchronousChannelGroup) {
 
-  private val log = Logger(this.getClass)
+  private implicit val log = Slf4jLogger.unsafeCreate[F]
 
   val address = new InetSocketAddress(config.hostname, config.port)
 
   private def sockets: Stream[F, Socket[F]] =
     for {
-      _ <- Stream.eval(Sync[F].delay(log.info(s"Start tcp server binding in address : $address")))
+      _ <- Stream.eval(Logger[F].info(s"Start tcp server binding in address : $address"))
       resource <- Socket.server[F](address)
       socket <- Stream.resource(resource)
     } yield socket
@@ -65,8 +66,22 @@ object SocketClientStream {
 
 object AsyncChannelProvider {
 
-  val DefaultNrOfThreads = 8
+  // Maybe we can make this configurable via pure config, similar to Akka dispatcher.
+  object Pool {
+    val MaxSize = 16
+    val InitialSize = 4
+  }
 
-  def instance(nrOfThreads: Int = DefaultNrOfThreads): AsynchronousChannelGroup =
-    AsynchronousChannelProvider.provider().openAsynchronousChannelGroup(nrOfThreads, Executors.defaultThreadFactory())
+  /**
+   * By default use the work stealing thread pool for async channel.
+   * Note that this is not ideal for blocking operations, which we should avoid.
+   *
+   * @param maxNrOfThreads Maximum number of threads in thread pool, default is 16 threads.
+   * @param initNrOfThreads Initial number of threads in thread pool, default is 4 threads.
+   * @return Asynchronous channel group for NIO invocation.
+   */
+  def instance(maxNrOfThreads: Int = Pool.MaxSize, initNrOfThreads: Int = Pool.InitialSize): AsynchronousChannelGroup =
+    AsynchronousChannelProvider
+      .provider()
+      .openAsynchronousChannelGroup(Executors.newWorkStealingPool(maxNrOfThreads), initNrOfThreads)
 }

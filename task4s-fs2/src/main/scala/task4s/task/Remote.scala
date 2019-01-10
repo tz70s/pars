@@ -8,6 +8,8 @@ import task4s.remote.tcp.{AsyncChannelProvider, TcpSocketConfig}
 import cats.syntax.apply._
 import fs2.{Chunk, Stream}
 import fs2.io.tcp.Socket
+import io.chrisdavenport.log4cats.Logger
+import io.chrisdavenport.log4cats.slf4j.Slf4jLogger
 import task4s.remote.serialize.{Message, SerializationProvider}
 
 import scala.concurrent.duration._
@@ -15,10 +17,11 @@ import scala.concurrent.duration._
 object Remote extends IOApp {
 
   implicit val acg: AsynchronousChannelGroup = AsyncChannelProvider.instance(8)
+  implicit val log = Slf4jLogger.unsafeCreate[IO]
 
   val serializer = SerializationProvider.serializer
 
-  def eval: Stream[IO, Unit] = Stream.eval(IO(println("Hello world!")))
+  def eval: Stream[IO, Unit] = Stream.eval(Logger[IO].info("Hello world!"))
 
   def message: Message = Message.fromStream[IO, Unit](eval)
 

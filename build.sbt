@@ -29,26 +29,23 @@ val akkaStreamTyped = akkaId %% "akka-stream-typed" % akkaVersion
 
 lazy val akkas = Seq(akkaActorTyped, akkaActorTypedTeskit, akkaClusterTyped, akkaClusterShardingTyped, akkaStreamTyped)
 
+// FS2-based impl dependencies.
+val FS2 = "co.fs2"
+val FS2Version = "1.0.2"
+val FS2Core = FS2 %% "fs2-core" % FS2Version
+val FS2IO = FS2 %% "fs2-io" % FS2Version
+
 // Alternatives
 val scalaTestVersion = "3.0.5"
 val scalaTest = "org.scalatest" %% "scalatest" % scalaTestVersion % Test
 val scalactic = "org.scalatest" %% "scalactic" % scalaTestVersion
 
 val logback = "ch.qos.logback" % "logback-classic" % "1.2.3"
-val logging = "com.typesafe.scala-logging" %% "scala-logging" % "3.9.0"
-
 val log4cats = "io.chrisdavenport" %% "log4cats-slf4j" % "0.2.0"
 
 val pureConfig = "com.github.pureconfig" %% "pureconfig" % "0.10.1"
 
-val FS2 = "co.fs2"
-val FS2Version = "1.0.2"
-val FS2Core = FS2 %% "fs2-core" % FS2Version
-val FS2IO = FS2 %% "fs2-io" % FS2Version
-val shapeless = "com.chuusai" %% "shapeless" % "2.3.3"
-
-val FS2s = Seq(FS2Core, FS2IO, shapeless)
-val testLibs = Seq(scalaTest)
+val librariesN = Seq(FS2Core, FS2IO, scalaTest, pureConfig, log4cats, logback)
 
 val catsEffect = "org.typelevel" %% "cats-effect" % "1.1.0"
 
@@ -111,7 +108,7 @@ lazy val `task4s-jmh` = (project in file("task4s-jmh"))
   .dependsOn(task4s, example)
 
 lazy val `task4s-fs2` = (project in file("task4s-fs2"))
-  .settings(libraryDependencies ++= FS2s ++ testLibs ++ Seq(logback, logging, pureConfig, log4cats))
+  .settings(libraryDependencies ++= librariesN)
 
 lazy val root = (project in file("."))
   .aggregate(task4s, site, example, `task4s-jmh`)
