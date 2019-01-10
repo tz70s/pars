@@ -3,7 +3,7 @@ package example
 import cats.effect.{ExitCode, IO, IOApp}
 import task4s.task.{Task, TaskStage}
 import cats.implicits._
-import com.typesafe.config.ConfigFactory
+import com.typesafe.config.{Config, ConfigFactory}
 
 import scala.concurrent.{Await, Future}
 import scala.concurrent.duration._
@@ -17,7 +17,7 @@ import scala.concurrent.duration.FiniteDuration
  */
 object WordCountApp extends IOApp {
 
-  val conf =
+  val conf: Config =
     ConfigFactory.parseString("""akka.remote.netty.tcp.port = 2552""".stripMargin).withFallback(ConfigFactory.load())
 
   implicit val stage: TaskStage = TaskStage("WordCountApp", conf)

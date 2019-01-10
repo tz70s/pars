@@ -9,13 +9,14 @@ class ProtocolSpec extends WordSpec with Matchers {
 
     "serialize header correctly" in {
       import Protocol._
+      val serializer = SerializationProvider.serializer
 
       val header = Header(0, Set(Options.TaskOffload), Map(Fields.ReflectClassName -> this.getClass.getCanonicalName))
-      val message = Message(header, Chunk.bytes("Hello".getBytes()))
-      val binary = message.toBinary
-      val expect = Serializer.fromBinary[Message](binary)
+      val message = Message(NormalEvent, Chunk.bytes("Hello".getBytes()))
+      val binary = serializer.toBinary(message)
+      val expect = binary.flatMap(b => serializer.fromBinary[Message](b))
 
-      header shouldBe expect.header
+      Right(message) shouldBe expect
     }
   }
 

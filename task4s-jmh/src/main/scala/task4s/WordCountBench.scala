@@ -7,7 +7,7 @@ import cats.implicits._
 import scala.concurrent.duration._
 import java.util.concurrent.TimeUnit
 
-import com.typesafe.config.ConfigFactory
+import com.typesafe.config.{Config, ConfigFactory}
 import example.{TaskSpawnRecord, WordCountTask}
 import org.openjdk.jmh.annotations._
 
@@ -25,7 +25,7 @@ class WordCountBench {
 
   val NrOfRuns = 10000L
 
-  val conf =
+  val conf: Config =
     ConfigFactory.parseString("""akka.remote.netty.tcp.port = 2551""".stripMargin).withFallback(ConfigFactory.load())
 
   implicit val stage: TaskStage = TaskStage("WordCountApp", conf)

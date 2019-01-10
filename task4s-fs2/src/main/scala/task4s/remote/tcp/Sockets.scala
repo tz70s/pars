@@ -53,17 +53,20 @@ class SocketClientStream[F[_]: Concurrent: ContextShift](remote: TcpSocketConfig
 object SocketServerStream {
   def apply[F[_]: Concurrent: ContextShift](
       handler: Socket[F] => Stream[F, Unit]
-  )(implicit acg: AsynchronousChannelGroup) =
+  )(implicit acg: AsynchronousChannelGroup): Stream[F, Unit] =
     new SocketServerStream[F]().ofStream(handler)
 }
 
 object SocketClientStream {
   def apply[F[_]: Concurrent: ContextShift](remote: TcpSocketConfig, handler: Socket[F] => Stream[F, Unit])(
       implicit acg: AsynchronousChannelGroup
-  ) = new SocketClientStream[F](remote).ofStream(handler)
+  ): Stream[F, Unit] = new SocketClientStream[F](remote).ofStream(handler)
 }
 
 object AsyncChannelProvider {
-  def get(nrOfThreads: Int): AsynchronousChannelGroup =
+
+  val DefaultNrOfThreads = 8
+
+  def instance(nrOfThreads: Int = DefaultNrOfThreads): AsynchronousChannelGroup =
     AsynchronousChannelProvider.provider().openAsynchronousChannelGroup(nrOfThreads, Executors.defaultThreadFactory())
 }

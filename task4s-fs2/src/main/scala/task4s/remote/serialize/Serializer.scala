@@ -2,39 +2,42 @@ package task4s.remote.serialize
 
 import java.io._
 
-import com.typesafe.scalalogging.Logger
+object SerializationProvider {
+  def serializer: Serializer = new JSerializer
+}
 
-object Serializer {
+trait Serializer {
+  def toBinary[M](obj: M): Either[Throwable, Array[Byte]]
+  def fromBinary[M](bytes: Array[Byte]): Either[Throwable, M]
+}
 
-  private val log = Logger(this.getClass)
+class JSerializer extends Serializer {
 
-  def toBinary[M <: Serializable](obj: M): Array[Byte] = {
+  override def toBinary[M](obj: M): Either[Throwable, Array[Byte]] = {
     val array = new ByteArrayOutputStream()
     val outputStream = new ObjectOutputStream(array)
+
     try {
       outputStream.writeObject(obj)
-      outputStream.flush()
-      outputStream.close()
+      Right(array.toByteArray)
     } catch {
-      case t: IOException =>
-        log.error(s"Serialization error: ${t.getMessage}")
-        throw t
+      case t: IOException => Left(t)
+    } finally {
+      outputStream.close()
     }
-    array.toByteArray
   }
 
-  def fromBinary[M <: Serializable](bytes: Array[Byte]): M = {
+  override def fromBinary[M](bytes: Array[Byte]): Either[Throwable, M] = {
     val array = new ByteArrayInputStream(bytes)
     val inputStream = new ObjectInputStream(array)
 
     try {
       val obj = inputStream.readObject()
-      inputStream.close()
-      obj.asInstanceOf[M]
+      Right(obj.asInstanceOf[M])
     } catch {
-      case t: IOException =>
-        log.error(s"Serialization error: ${t.getMessage}")
-        throw t
+      case t: IOException => Left(t)
+    } finally {
+      inputStream.close()
     }
   }
 }

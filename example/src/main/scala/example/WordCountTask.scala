@@ -17,6 +17,8 @@ object WordCountTask {
                  |Humpty Dumpty had a great fall.
                  |All the king's horses and all the king's men
                  |Couldn't put Humpty together again."""
+
+  val PoetryTimes: String = (0 to 100).map(_ => Poetry).reduce(_ + _)
 }
 
 class WordCountTask(implicit stage: TaskStage) {
@@ -26,8 +28,7 @@ class WordCountTask(implicit stage: TaskStage) {
     Future[immutable.Seq[(String, Int)]]
   ] = { _: TaskStage =>
     Source
-      .repeat(Poetry)
-      .take(10000)
+      .single(PoetryTimes)
       .mapConcat(text => text.split("\n").toList)
       .map(line => line.stripMargin)
       .mapConcat(line => line.split(" ").toList)
