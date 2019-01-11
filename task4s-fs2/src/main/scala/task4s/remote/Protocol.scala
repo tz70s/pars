@@ -1,9 +1,10 @@
-package task4s.remote.serialize
+package task4s.remote
 
 import java.nio.charset.StandardCharsets
 
 import fs2.Stream
-import task4s.remote.serialize.Protocol.MessageType
+import task4s.remote.Protocol.MessageType
+import task4s.remote.serialize.SerializableStreamT
 
 /**
  * The protocol design:

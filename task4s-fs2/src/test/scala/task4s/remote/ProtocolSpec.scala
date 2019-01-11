@@ -1,7 +1,8 @@
-package task4s.remote.serialize
+package task4s.remote
 
 import fs2.Chunk
 import org.scalatest.{Matchers, WordSpec}
+import task4s.remote.serialize.SerializationProvider
 
 class ProtocolSpec extends WordSpec with Matchers {
 

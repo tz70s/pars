@@ -3,14 +3,14 @@ package task4s.task
 import java.nio.channels.AsynchronousChannelGroup
 
 import cats.effect._
-import task4s.remote.Service
+import task4s.remote.{Message, Service}
 import task4s.remote.tcp.{AsyncChannelProvider, TcpSocketConfig}
 import cats.syntax.apply._
 import fs2.{Chunk, Stream}
 import fs2.io.tcp.Socket
 import io.chrisdavenport.log4cats.Logger
 import io.chrisdavenport.log4cats.slf4j.Slf4jLogger
-import task4s.remote.serialize.{Message, SerializationProvider}
+import task4s.remote.serialize.SerializationProvider
 
 import scala.concurrent.duration._
 

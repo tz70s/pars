@@ -110,5 +110,5 @@ lazy val `task4s-jmh` = (project in file("task4s-jmh"))
 lazy val `task4s-fs2` = (project in file("task4s-fs2"))
   .settings(libraryDependencies ++= librariesN)
 
-lazy val root = (project in file("."))
+lazy val `task4s-root` = (project in file("."))
   .aggregate(task4s, site, example, `task4s-jmh`)

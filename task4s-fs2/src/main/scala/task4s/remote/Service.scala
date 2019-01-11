@@ -62,7 +62,6 @@ object Service {
   sealed trait BatchState
   case object FlushOut extends BatchState
 
-  // TODO: should extend this into resource.
   def apply[F[_]: Concurrent: ContextShift]()(implicit acg: AsynchronousChannelGroup): Stream[F, Unit] =
     new Service().bindAndHandle
 
