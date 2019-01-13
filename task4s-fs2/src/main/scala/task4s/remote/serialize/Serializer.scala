@@ -11,7 +11,14 @@ trait Serializer {
   def fromBinary[M](bytes: Array[Byte]): Either[Throwable, M]
 }
 
-class JSerializer extends Serializer {
+/**
+ * Default Java Serializer.
+ *
+ * For performance reason, may switch to another fast serializer for system messages, i.e. Protocol Buffer.
+ *
+ * INTERNAL API.
+ */
+private[task4s] class JSerializer extends Serializer {
 
   override def toBinary[M](obj: M): Either[Throwable, Array[Byte]] = {
     val array = new ByteArrayOutputStream()

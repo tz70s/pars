@@ -5,7 +5,7 @@ import java.nio.channels.AsynchronousChannelGroup
 import cats.effect.{Concurrent, ContextShift}
 import fs2.{Chunk, Pipe, Pull, Stream}
 import fs2.io.tcp.Socket
-import io.chrisdavenport.log4cats.Logger
+import io.chrisdavenport.log4cats.SelfAwareStructuredLogger
 import io.chrisdavenport.log4cats.slf4j.Slf4jLogger
 import task4s.remote.serialize._
 import task4s.remote.tcp.{SocketClientStream, SocketServerStream, TcpSocketConfig}
@@ -14,22 +14,14 @@ class Service[F[_]: Concurrent: ContextShift]()(implicit val acg: AsynchronousCh
 
   import Service._
 
-  import Protocol._
-
-  private implicit val log = Slf4jLogger.unsafeCreate[F]
+  private implicit val log: SelfAwareStructuredLogger[F] = Slf4jLogger.unsafeCreate[F]
 
   private val serializer = SerializationProvider.serializer
 
   private def reactor(socket: Socket[F]): Stream[F, Unit] =
     for {
       message <- socket.reads(ChunkSize).through(extract())
-      _ <- Stream.eval {
-        message.tpe match {
-          case SerializableStreamEvent =>
-            message.value.asInstanceOf[SerializableStreamF[F]].ev.compile.drain
-          case NormalEvent => Logger[F].info(s"Get message ${message.tpe}, ${message.value}")
-        }
-      }
+      _ <- Protocol.parse(message)
       _ <- Stream.eval(socket.endOfOutput)
     } yield ()
 

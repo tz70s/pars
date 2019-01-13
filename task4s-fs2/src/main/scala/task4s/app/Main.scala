@@ -1,11 +1,11 @@
-package task4s.task
+package task4s.app
 
 import java.nio.channels.AsynchronousChannelGroup
 
-import cats.effect._
-import task4s.remote.tcp.AsyncChannelProvider
-import cats.syntax.apply._
+import cats.effect.{ExitCode, IO, IOApp}
 import task4s.remote.Service
+import task4s.remote.tcp.AsyncChannelProvider
+import cats.implicits._
 
 object Main extends IOApp {
 

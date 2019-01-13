@@ -18,6 +18,8 @@ ThisBuild / scalacOptions ++= Seq(
   "-Ywarn-infer-any"
 )
 
+ThisBuild / resolvers += Resolver.sonatypeRepo("releases")
+
 // Akka dependencies.
 val akkaVersion = "2.5.19"
 val akkaId = "com.typesafe.akka"
@@ -45,7 +47,12 @@ val log4cats = "io.chrisdavenport" %% "log4cats-slf4j" % "0.2.0"
 
 val pureConfig = "com.github.pureconfig" %% "pureconfig" % "0.10.1"
 
-val librariesN = Seq(FS2Core, FS2IO, scalaTest, pureConfig, log4cats, logback)
+val curatorVersion = "4.1.0"
+val curator = "org.apache.curator" % "curator-recipes" % curatorVersion
+val curatorAsync = "org.apache.curator" % "curator-x-async" % curatorVersion
+val curatorTest = "org.apache.curator" % "curator-test" % curatorVersion % Test
+
+val librariesN = Seq(FS2Core, FS2IO, scalaTest, pureConfig, log4cats, logback, curator, curatorAsync, curatorTest)
 
 val catsEffect = "org.typelevel" %% "cats-effect" % "1.1.0"
 
@@ -109,6 +116,7 @@ lazy val `task4s-jmh` = (project in file("task4s-jmh"))
 
 lazy val `task4s-fs2` = (project in file("task4s-fs2"))
   .settings(libraryDependencies ++= librariesN)
+  .settings(addCompilerPlugin("org.spire-math" %% "kind-projector" % "0.9.8"))
 
 lazy val `task4s-root` = (project in file("."))
   .aggregate(task4s, site, example, `task4s-jmh`)

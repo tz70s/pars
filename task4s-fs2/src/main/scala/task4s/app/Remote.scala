@@ -1,25 +1,25 @@
-package task4s.task
+package task4s.app
 
 import java.nio.channels.AsynchronousChannelGroup
 
-import cats.effect._
-import task4s.remote.{Message, Service}
-import task4s.remote.tcp.{AsyncChannelProvider, TcpSocketConfig}
-import cats.syntax.apply._
-import fs2.{Chunk, Stream}
+import cats.effect.{ExitCode, IO, IOApp}
 import fs2.io.tcp.Socket
-import io.chrisdavenport.log4cats.Logger
+import fs2.{Chunk, Stream}
+import io.chrisdavenport.log4cats.{Logger, SelfAwareStructuredLogger}
 import io.chrisdavenport.log4cats.slf4j.Slf4jLogger
-import task4s.remote.serialize.SerializationProvider
+import task4s.remote.serialize.{SerializationProvider, Serializer}
+import task4s.remote.tcp.{AsyncChannelProvider, TcpSocketConfig}
+import task4s.remote.{Message, Service}
+import cats.implicits._
 
 import scala.concurrent.duration._
 
 object Remote extends IOApp {
 
   implicit val acg: AsynchronousChannelGroup = AsyncChannelProvider.instance(8)
-  implicit val log = Slf4jLogger.unsafeCreate[IO]
+  implicit val log: SelfAwareStructuredLogger[IO] = Slf4jLogger.unsafeCreate[IO]
 
-  val serializer = SerializationProvider.serializer
+  val serializer: Serializer = SerializationProvider.serializer
 
   def eval: Stream[IO, Unit] = Stream.eval(Logger[IO].info("Hello world!"))
 

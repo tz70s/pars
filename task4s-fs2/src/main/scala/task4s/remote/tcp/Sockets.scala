@@ -9,7 +9,7 @@ import java.util.concurrent.Executors
 import cats.effect.{Concurrent, ContextShift}
 import fs2.Stream
 import fs2.io.tcp.Socket
-import io.chrisdavenport.log4cats.Logger
+import io.chrisdavenport.log4cats.{Logger, SelfAwareStructuredLogger}
 import io.chrisdavenport.log4cats.slf4j.Slf4jLogger
 
 case class TcpSocketConfig(hostname: String, port: Int)
@@ -24,7 +24,7 @@ class SocketServerStream[F[_]: Concurrent: ContextShift](
     config: TcpSocketConfig = pureconfig.loadConfigOrThrow[TcpSocketConfig]("task4s.remote.tcp")
 )(implicit acg: AsynchronousChannelGroup) {
 
-  private implicit val log = Slf4jLogger.unsafeCreate[F]
+  private implicit val log: SelfAwareStructuredLogger[F] = Slf4jLogger.unsafeCreate[F]
 
   val address = new InetSocketAddress(config.hostname, config.port)
 
@@ -66,11 +66,10 @@ object SocketClientStream {
 
 object AsyncChannelProvider {
 
-  // Maybe we can make this configurable via pure config, similar to Akka dispatcher.
-  object Pool {
-    val MaxSize = 16
-    val InitialSize = 4
-  }
+  private case class DefaultWorkStealingPoolSizeConfig(min: Int, max: Int)
+
+  private val DefaultWorkStealingPoolSize =
+    pureconfig.loadConfigOrThrow[DefaultWorkStealingPoolSizeConfig]("task4s.remote.thread-pool.default")
 
   /**
    * By default use the work stealing thread pool for async channel.
@@ -80,7 +79,8 @@ object AsyncChannelProvider {
    * @param initNrOfThreads Initial number of threads in thread pool, default is 4 threads.
    * @return Asynchronous channel group for NIO invocation.
    */
-  def instance(maxNrOfThreads: Int = Pool.MaxSize, initNrOfThreads: Int = Pool.InitialSize): AsynchronousChannelGroup =
+  def instance(maxNrOfThreads: Int = DefaultWorkStealingPoolSize.max,
+               initNrOfThreads: Int = DefaultWorkStealingPoolSize.min): AsynchronousChannelGroup =
     AsynchronousChannelProvider
       .provider()
       .openAsynchronousChannelGroup(Executors.newWorkStealingPool(maxNrOfThreads), initNrOfThreads)

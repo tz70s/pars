@@ -9,7 +9,7 @@ case class NormalFormCaseClazz(index: Int, value: String)
 
 class SerializerSpec extends WordSpec with Matchers {
 
-  val serializer = SerializationProvider.serializer
+  val serializer: Serializer = SerializationProvider.serializer
 
   "Serializer" should {
 

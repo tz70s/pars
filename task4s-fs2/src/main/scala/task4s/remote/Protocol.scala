@@ -2,9 +2,12 @@ package task4s.remote
 
 import java.nio.charset.StandardCharsets
 
+import cats.effect.Sync
 import fs2.Stream
-import task4s.remote.Protocol.MessageType
-import task4s.remote.serialize.SerializableStreamT
+import io.chrisdavenport.log4cats.Logger
+import task4s.ChannelRef
+import task4s.remote.Protocol.EventT
+import task4s.remote.serialize.{SerializableStreamF, SerializableStreamT}
 
 /**
  * The protocol design:
@@ -16,19 +19,23 @@ import task4s.remote.serialize.SerializableStreamT
  */
 object Protocol {
 
-  sealed trait MessageType
-  case object NormalEvent extends MessageType
-  case object SerializableStreamEvent extends MessageType
+  sealed trait EventT
 
-  // Regular sizing for alignment.
-  val SizeOfHeaderPlaceHolder = 8
-  val SizeOfBodyPlaceHolder = 8
+  sealed trait ChannelEventT extends EventT
 
-  // Protocol options, to be extend.
-  object Options {
-    val NormalEvent: Byte = 'E'
-    val TaskOffload: Byte = 'T'
-    val Delimiter: Byte = 'X'
+  object ChannelEventT {
+    case class Send(to: ChannelRef) extends ChannelEventT
+    case class Ok(to: ChannelRef) extends ChannelEventT
+    case class Err(throwable: Throwable) extends ChannelEventT
+  }
+
+  sealed trait TaskEventT extends EventT
+
+  object TaskEventT {
+    case object Create extends TaskEventT
+    case object Delete extends TaskEventT
+    case class Ok() extends TaskEventT
+    case class Err(throwable: Throwable) extends TaskEventT
   }
 
   object Fields {
@@ -38,15 +45,24 @@ object Protocol {
     val MagicSeparator: Array[Byte] = StringMagicSeparator.getBytes(StandardCharsets.UTF_8)
     val Delimiter: Array[Byte] = "-X-".getBytes(StandardCharsets.UTF_8)
   }
+
+  def parse[F[_]: Sync](message: Message)(implicit log: Logger[F]): Stream[F, Unit] =
+    message.header.tpe match {
+      case t: TaskEventT =>
+        Stream.eval(message.value.asInstanceOf[SerializableStreamF[F]].ev.compile.drain)
+      case c: ChannelEventT =>
+        Stream.eval(Logger[F].info(s"Get message ${message.header.tpe}, ${message.value}"))
+    }
 }
 
-case class Header(bodySize: Int, options: Set[Byte], fields: Map[Byte, String])
+case class Header(tpe: EventT)
 
-case class Message(tpe: MessageType, value: AnyRef)
+case class Message(header: Header, value: AnyRef)
 
 object Message {
 
   import Protocol._
 
-  def fromStream[F[_], A](eval: Stream[F, A]) = Message(SerializableStreamEvent, SerializableStreamT(eval))
+  def fromStream[F[_], A](eval: Stream[F, A]) =
+    Message(Header(TaskEventT.Create), SerializableStreamT(eval))
 }
