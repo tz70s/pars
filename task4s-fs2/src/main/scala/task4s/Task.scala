@@ -3,7 +3,7 @@ package task4s
 import cats.MonadError
 import fs2.Stream
 
-final class Task[F[_], +T] private (val stream: Stream[F, Unit], val channel: Channel[F, T]) {
+final class Task[F[_], T] private (val stream: Stream[F, Unit], val channel: Channel[F, T]) {
   def allocate(strategy: Strategy)(implicit allocator: Allocator): Stream[F, T] =
     allocator.allocate(this, strategy)
 }

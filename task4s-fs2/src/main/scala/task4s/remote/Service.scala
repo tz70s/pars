@@ -7,10 +7,11 @@ import fs2.{Chunk, Pipe, Pull, Stream}
 import fs2.io.tcp.Socket
 import io.chrisdavenport.log4cats.SelfAwareStructuredLogger
 import io.chrisdavenport.log4cats.slf4j.Slf4jLogger
+import task4s.ChannelService
 import task4s.remote.serialize._
 import task4s.remote.tcp.{SocketClientStream, SocketServerStream, TcpSocketConfig}
 
-class Service[F[_]: Concurrent: ContextShift]()(implicit val acg: AsynchronousChannelGroup) {
+class Service[F[_]: Concurrent: ContextShift](val cs: ChannelService[F])(implicit val acg: AsynchronousChannelGroup) {
 
   import Service._
 
@@ -54,10 +55,14 @@ object Service {
   sealed trait BatchState
   case object FlushOut extends BatchState
 
-  def apply[F[_]: Concurrent: ContextShift]()(implicit acg: AsynchronousChannelGroup): Stream[F, Unit] =
-    new Service().bindAndHandle
+  def apply[F[_]: Concurrent: ContextShift](
+      channelService: ChannelService[F]
+  )(implicit acg: AsynchronousChannelGroup): Stream[F, Unit] =
+    new Service(channelService).bindAndHandle
 
+  /*
   def remote[F[_]: Concurrent: ContextShift](rmt: TcpSocketConfig, handler: Socket[F] => Stream[F, Unit])(
       implicit acg: AsynchronousChannelGroup
   ): Stream[F, Unit] = new Service().remote(rmt, handler)
+ */
 }

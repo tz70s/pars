@@ -39,8 +39,5 @@ object Remote extends IOApp {
   }
 
   override def run(args: List[String]): IO[ExitCode] =
-    Service
-      .remote[IO](TcpSocketConfig("127.0.0.1", 8080), loopSeq(_))
-      .compile
-      .drain *> IO.pure(ExitCode.Success)
+    IO.pure(ExitCode.Success)
 }
