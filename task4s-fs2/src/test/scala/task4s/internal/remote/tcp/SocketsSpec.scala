@@ -1,4 +1,4 @@
-package task4s.remote.tcp
+package task4s.internal.remote.tcp
 
 import java.nio.channels.AsynchronousChannelGroup
 

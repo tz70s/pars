@@ -2,6 +2,8 @@ package task4s
 
 import fs2.{Pure, Stream}
 
+import scala.reflect.ClassTag
+
 /**
  * Core abstraction over serializable stream closure for distributed computation.
  *
@@ -101,7 +103,7 @@ object Machine {
    * @param channel Input channel to evaluated Stream.
    * @param process The pipe process evaluation from a stream to another stream.
    */
-  def concat[F[_], In, Out](channel: Channel[In])(process: Stream[F, In] => Stream[F, Out]) =
+  def concat[F[_], In: ClassTag, Out: ClassTag](channel: Channel[In])(process: Stream[F, In] => Stream[F, Out]) =
     new FlyingMachine[F, In, Out](process, channel)
 
   /**
@@ -117,6 +119,6 @@ object Machine {
    * }}}
    * @param stream The evaluated Stream.
    */
-  def offload[F[_], Out](stream: Stream[F, Out]) =
+  def offload[F[_], Out: ClassTag](stream: Stream[F, Out]) =
     new FlyingMachine[F, Unit, Out](_ => stream, Channel("SystemGeneratedUID"))
 }

@@ -5,7 +5,6 @@ import org.scalatest.{Matchers, WordSpec}
 import fs2.Stream
 import io.chrisdavenport.log4cats.Logger
 import io.chrisdavenport.log4cats.slf4j.Slf4jLogger
-import task4s.remote.serialize.SerializationProvider
 
 class MachineSpec extends WordSpec with Matchers {
 
@@ -58,8 +57,8 @@ class MachineSpec extends WordSpec with Matchers {
         } yield i
       }
 
-      val binary = serializer.toBinary(m)
-      val after = binary.flatMap(b => serializer.fromBinary[FlyingMachine[IO, Unit, Int]](b))
+      val binary = serializer.serialize(m)
+      val after = binary.flatMap(b => serializer.deserialize[FlyingMachine[IO, Unit, Int]](b))
 
       after.toTry.get.assemble.compile.toList.unsafeRunSync() shouldBe expect
     }

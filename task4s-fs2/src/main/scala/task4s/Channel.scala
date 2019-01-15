@@ -11,17 +11,13 @@ package task4s
  * i.e. to decide accurate replicas of Machines, we'll use the id to coordinate around all participating nodes.
  *
  * @see ChannelOutputStrategy
- *
  * @param id The unique identifier for channel.
  * @param strategy Channel output strategy.
  */
-final case class Channel[+T](id: String, strategy: ChannelOutputStrategy)
+final case class Channel[+T](id: String, strategy: ChannelOutputStrategy = ChannelOutputStrategy.Concurrent)
 
 object Channel {
   val ChannelSize: Int = pureconfig.loadConfigOrThrow[Int]("task4s.channel.size")
-
-  def apply[T](ref: String, strategy: ChannelOutputStrategy = ChannelOutputStrategy.Concurrent): Channel[T] =
-    new Channel(ref, strategy)
 }
 
 sealed trait ChannelOutputStrategy extends Serializable

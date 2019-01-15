@@ -1,4 +1,4 @@
-package task4s.remote
+package task4s.internal.remote
 
 import java.nio.channels.AsynchronousChannelGroup
 
@@ -7,11 +7,11 @@ import fs2.Stream
 import fs2.io.tcp.Socket
 import io.chrisdavenport.log4cats.SelfAwareStructuredLogger
 import io.chrisdavenport.log4cats.slf4j.Slf4jLogger
-import task4s.remote.tcp.{SocketClientStream, SocketServerStream, TcpSocketConfig}
+import task4s.internal.remote.tcp.{SocketClientStream, SocketServerStream, TcpSocketConfig}
 
-class Service[F[_]: Concurrent: ContextShift](implicit val acg: AsynchronousChannelGroup) {
-
-  import Service._
+private[task4s] class NetService[F[_]: Concurrent: ContextShift]()(
+    implicit val acg: AsynchronousChannelGroup
+) {
 
   private val parser = new ProtocolParser[F]
 
@@ -19,7 +19,7 @@ class Service[F[_]: Concurrent: ContextShift](implicit val acg: AsynchronousChan
 
   private def reactor(socket: Socket[F]): Stream[F, Unit] =
     for {
-      message <- socket.reads(ChunkSize).through(parser.parse)
+      message <- parser.parse(socket)
       _ <- Stream.eval(socket.endOfOutput)
     } yield ()
 
@@ -29,17 +29,12 @@ class Service[F[_]: Concurrent: ContextShift](implicit val acg: AsynchronousChan
     SocketClientStream[F](rmt, handler)
 }
 
-object Service {
-
-  val ChunkSize: Int = pureconfig.loadConfigOrThrow[Int]("task4s.remote.chunk-size")
-
-  sealed trait BatchState
-  case object FlushOut extends BatchState
+private[task4s] object NetService {
 
   def apply[F[_]: Concurrent: ContextShift](implicit acg: AsynchronousChannelGroup): Stream[F, Unit] =
-    new Service().bindAndHandle
+    new NetService().bindAndHandle
 
   def remote[F[_]: Concurrent: ContextShift](rmt: TcpSocketConfig, handler: Socket[F] => Stream[F, Unit])(
       implicit acg: AsynchronousChannelGroup
-  ): Stream[F, Unit] = new Service().remote(rmt, handler)
+  ): Stream[F, Unit] = new NetService().remote(rmt, handler)
 }

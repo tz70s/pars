@@ -1,28 +1,21 @@
-package task4s.remote.serialize
+package task4s.internal.remote.serialization
 
 import java.io._
 
+import task4s.Serializer
+
 import scala.reflect.ClassTag
 
-object SerializationProvider {
-  def serializer: Serializer = new JSerializer
-}
-
-trait Serializer {
-  def toBinary[M: ClassTag](obj: M): Either[Throwable, Array[Byte]]
-  def fromBinary[M: ClassTag](bytes: Array[Byte]): Either[Throwable, M]
-}
-
 /**
+ * INTERNAL API.
+ *
  * Default Java Serializer.
  *
  * For performance reason, may switch to another fast serializer for system messages, i.e. Protocol Buffer.
- *
- * INTERNAL API.
  */
 private[task4s] class JSerializer extends Serializer {
 
-  override def toBinary[M: ClassTag](obj: M): Either[Throwable, Array[Byte]] = {
+  override def serialize[M: ClassTag](obj: M): Either[Throwable, Array[Byte]] = {
     val array = new ByteArrayOutputStream()
     val outputStream = new ObjectOutputStream(array)
 
@@ -36,7 +29,7 @@ private[task4s] class JSerializer extends Serializer {
     }
   }
 
-  override def fromBinary[M: ClassTag](bytes: Array[Byte]): Either[Throwable, M] = {
+  override def deserialize[M: ClassTag](bytes: Array[Byte]): Either[Throwable, M] = {
     val array = new ByteArrayInputStream(bytes)
     val inputStream = new ObjectInputStream(array)
 

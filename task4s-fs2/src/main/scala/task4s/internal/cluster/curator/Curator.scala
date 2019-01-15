@@ -1,4 +1,4 @@
-package task4s.cluster.curator
+package task4s.internal.cluster.curator
 
 import cats.effect.{Async, ContextShift, Sync}
 import org.apache.curator.framework.{CuratorFramework, CuratorFrameworkFactory}

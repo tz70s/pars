@@ -1,4 +1,4 @@
-package task4s.cluster.curator
+package task4s.internal.cluster.curator
 
 import cats.effect.{ContextShift, IO}
 import org.apache.curator.test.TestingServer

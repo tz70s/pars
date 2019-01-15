@@ -1,4 +1,4 @@
-package task4s.remote.tcp
+package task4s.internal.remote.tcp
 
 import pureconfig.generic.auto._
 import java.net.InetSocketAddress
@@ -21,7 +21,7 @@ case class TcpSocketConfig(hostname: String, port: Int)
  * Therefore, both server and client should be transparent to user.
  */
 class SocketServerStream[F[_]: Concurrent: ContextShift](
-    config: TcpSocketConfig = pureconfig.loadConfigOrThrow[TcpSocketConfig]("task4s.remote.tcp")
+    config: TcpSocketConfig = pureconfig.loadConfigOrThrow[TcpSocketConfig]("task4s.internal.remote.tcp")
 )(implicit acg: AsynchronousChannelGroup) {
 
   private implicit val log: SelfAwareStructuredLogger[F] = Slf4jLogger.unsafeCreate[F]
@@ -69,7 +69,7 @@ object AsyncChannelProvider {
   private case class DefaultWorkStealingPoolSizeConfig(min: Int, max: Int)
 
   private val DefaultWorkStealingPoolSize =
-    pureconfig.loadConfigOrThrow[DefaultWorkStealingPoolSizeConfig]("task4s.remote.thread-pool.default")
+    pureconfig.loadConfigOrThrow[DefaultWorkStealingPoolSizeConfig]("task4s.internal.remote.thread-pool.default")
 
   /**
    * By default use the work stealing thread pool for async channel.
