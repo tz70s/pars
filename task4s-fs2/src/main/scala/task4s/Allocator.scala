@@ -7,7 +7,7 @@ import fs2.Stream
  * Similar to Execution Context, the allocator will be scoped via implicit to flexible **shifting** allocation instance.
  */
 trait Allocator {
-  def allocate[F[_], T](task: Task[F, T], strategy: Strategy): Stream[F, T]
+  def allocate[F[_], I, O](machine: Machine[F, I, O], strategy: Strategy): Stream[F, O]
 }
 
 /**
@@ -17,7 +17,7 @@ trait Allocator {
  * INTERNAL API.
  */
 private[task4s] class SelfAllocatorImpl extends Allocator {
-  override def allocate[F[_], T](task: Task[F, T], strategy: Strategy): Stream[F, T] = ???
+  override def allocate[F[_], I, O](machine: Machine[F, I, O], strategy: Strategy): Stream[F, O] = ???
 }
 
 /**

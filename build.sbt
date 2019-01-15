@@ -114,9 +114,14 @@ lazy val `task4s-jmh` = (project in file("task4s-jmh"))
   .enablePlugins(JmhPlugin)
   .dependsOn(task4s, example)
 
+lazy val testFilter = Seq(
+  Test / testOptions := Seq(Tests.Filter(s => !(s.contains("Socket") || s.contains("Curator"))))
+)
+
 lazy val `task4s-fs2` = (project in file("task4s-fs2"))
   .settings(libraryDependencies ++= librariesN)
   .settings(addCompilerPlugin("org.spire-math" %% "kind-projector" % "0.9.8"))
+  .settings(testFilter)
 
 lazy val `task4s-root` = (project in file("."))
   .aggregate(task4s, site, example, `task4s-jmh`)

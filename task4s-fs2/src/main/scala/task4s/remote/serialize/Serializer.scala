@@ -2,13 +2,15 @@ package task4s.remote.serialize
 
 import java.io._
 
+import scala.reflect.ClassTag
+
 object SerializationProvider {
   def serializer: Serializer = new JSerializer
 }
 
 trait Serializer {
-  def toBinary[M](obj: M): Either[Throwable, Array[Byte]]
-  def fromBinary[M](bytes: Array[Byte]): Either[Throwable, M]
+  def toBinary[M: ClassTag](obj: M): Either[Throwable, Array[Byte]]
+  def fromBinary[M: ClassTag](bytes: Array[Byte]): Either[Throwable, M]
 }
 
 /**
@@ -20,7 +22,7 @@ trait Serializer {
  */
 private[task4s] class JSerializer extends Serializer {
 
-  override def toBinary[M](obj: M): Either[Throwable, Array[Byte]] = {
+  override def toBinary[M: ClassTag](obj: M): Either[Throwable, Array[Byte]] = {
     val array = new ByteArrayOutputStream()
     val outputStream = new ObjectOutputStream(array)
 
@@ -34,7 +36,7 @@ private[task4s] class JSerializer extends Serializer {
     }
   }
 
-  override def fromBinary[M](bytes: Array[Byte]): Either[Throwable, M] = {
+  override def fromBinary[M: ClassTag](bytes: Array[Byte]): Either[Throwable, M] = {
     val array = new ByteArrayInputStream(bytes)
     val inputStream = new ObjectInputStream(array)
 

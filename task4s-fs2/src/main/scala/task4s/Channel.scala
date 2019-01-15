@@ -1,49 +1,32 @@
 package task4s
 
-import cats.data.OptionT
-import cats.effect.{Concurrent, Sync}
-
-import scala.collection.concurrent.TrieMap
-
-final case class Channel[F[_]: Concurrent, T](ref: ChannelRef,
-                                              strategy: ChannelOutputStrategy = ChannelOutputStrategy.Concurrent)
+/**
+ * Channel for machine composition.
+ *
+ * It's actually only a meta information for internal routing service to dispatch stream to specific machine.
+ * Cause each machine binds a specific channel, in any.
+ *
+ * Note that the id field is important to both channel and machine,
+ * b.c. it's also the identifier for cluster-wide machine allocation,
+ * i.e. to decide accurate replicas of Machines, we'll use the id to coordinate around all participating nodes.
+ *
+ * @see ChannelOutputStrategy
+ *
+ * @param id The unique identifier for channel.
+ * @param strategy Channel output strategy.
+ */
+final case class Channel[+T](id: String, strategy: ChannelOutputStrategy)
 
 object Channel {
-
   val ChannelSize: Int = pureconfig.loadConfigOrThrow[Int]("task4s.channel.size")
 
-  def apply[F[_]: Concurrent, T](ref: ChannelRef,
-                                 strategy: ChannelOutputStrategy = ChannelOutputStrategy.Concurrent): Channel[F, T] =
+  def apply[T](ref: String, strategy: ChannelOutputStrategy = ChannelOutputStrategy.Concurrent): Channel[T] =
     new Channel(ref, strategy)
 }
 
-final case class ChannelRef(value: String)
-
-sealed trait ChannelOutputStrategy
+sealed trait ChannelOutputStrategy extends Serializable
 
 object ChannelOutputStrategy {
   case object Concurrent extends ChannelOutputStrategy
   case object Broadcast extends ChannelOutputStrategy
-}
-
-/**
- * ChannelService records local cache of channel instances.
- *
- * Note: the current implementation based on TrieMap is side-effected.
- *
- * @param sync$F Require Sync context bound for evaluate into effect context.
- * @tparam F Effect type.
- */
-private[task4s] class ChannelService[F[_]: Sync]() {
-
-  private val channels = TrieMap[ChannelRef, Channel[F, _]]()
-
-  def +=[T](channel: Channel[F, T]): F[Unit] =
-    Sync[F].delay(channels += (channel.ref -> channel))
-
-  def -=[T](channel: Channel[F, T]): F[Unit] =
-    Sync[F].delay(channels -= channel.ref)
-
-  def lookUp(ref: ChannelRef): OptionT[F, Channel[F, _]] =
-    OptionT(Sync[F].delay(channels.get(ref)))
 }

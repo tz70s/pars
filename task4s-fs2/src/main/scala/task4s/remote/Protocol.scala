@@ -2,21 +2,12 @@ package task4s.remote
 
 import java.nio.charset.StandardCharsets
 
-import cats.effect.Sync
-import fs2.Stream
-import io.chrisdavenport.log4cats.Logger
-import task4s.ChannelRef
+import cats.effect.Concurrent
+import fs2.{Chunk, Pipe, Pull, Stream}
+import task4s.Channel
 import task4s.remote.Protocol.EventT
-import task4s.remote.serialize.{SerializableStreamF, SerializableStreamT}
+import task4s.remote.serialize.SerializationProvider
 
-/**
- * The protocol design:
- *
- * 1. The size of header.
- * 2. The size of body.
- * 3. Header options, with one word for each and collect into set.
- * 4. Header field, to be extend.
- */
 object Protocol {
 
   sealed trait EventT
@@ -24,18 +15,20 @@ object Protocol {
   sealed trait ChannelEventT extends EventT
 
   object ChannelEventT {
-    case class Send(to: ChannelRef) extends ChannelEventT
-    case class Ok(to: ChannelRef) extends ChannelEventT
+    case class Send(to: Channel[_]) extends ChannelEventT
+    case class Ok(to: Channel[_]) extends ChannelEventT
     case class Err(throwable: Throwable) extends ChannelEventT
   }
 
-  sealed trait TaskEventT extends EventT
+  sealed trait MachineSignalT extends EventT
 
-  object TaskEventT {
-    case object Create extends TaskEventT
-    case object Delete extends TaskEventT
-    case class Ok() extends TaskEventT
-    case class Err(throwable: Throwable) extends TaskEventT
+  object MachineSignalT {
+
+    /** Spawn is responsible for spawning machine instance via class loading. */
+    case object Spawn extends MachineSignalT
+    case object Down extends MachineSignalT
+    case class Ok() extends MachineSignalT
+    case class Err(throwable: Throwable) extends MachineSignalT
   }
 
   object Fields {
@@ -46,23 +39,31 @@ object Protocol {
     val Delimiter: Array[Byte] = "-X-".getBytes(StandardCharsets.UTF_8)
   }
 
-  def parse[F[_]: Sync](message: Message)(implicit log: Logger[F]): Stream[F, Unit] =
-    message.header.tpe match {
-      case t: TaskEventT =>
-        Stream.eval(message.value.asInstanceOf[SerializableStreamF[F]].ev.compile.drain)
-      case c: ChannelEventT =>
-        Stream.eval(Logger[F].info(s"Get message ${message.header.tpe}, ${message.value}"))
-    }
+}
+
+class ProtocolParser[F[_]: Concurrent] {
+
+  private val serializer = SerializationProvider.serializer
+
+  def parse: Pipe[F, Byte, Message] = {
+    def statefulPull(stream: Stream[F, Byte]): Pull[F, Message, Unit] =
+      stream.pull.uncons.flatMap {
+        case Some((head, tail)) =>
+          serializer.fromBinary[Message](head.toArray) match {
+            case Right(message) => Pull.output(Chunk.singleton(message)) >> statefulPull(tail)
+            case Left(cause) => Pull.raiseError(cause)
+          }
+        case None =>
+          Pull.done
+      }
+
+    source =>
+      statefulPull(source).stream
+  }
 }
 
 case class Header(tpe: EventT)
 
 case class Message(header: Header, value: AnyRef)
 
-object Message {
-
-  import Protocol._
-
-  def fromStream[F[_], A](eval: Stream[F, A]) =
-    Message(Header(TaskEventT.Create), SerializableStreamT(eval))
-}
+object Message {}

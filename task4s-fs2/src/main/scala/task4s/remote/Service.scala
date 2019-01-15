@@ -3,44 +3,25 @@ package task4s.remote
 import java.nio.channels.AsynchronousChannelGroup
 
 import cats.effect.{Concurrent, ContextShift}
-import fs2.{Chunk, Pipe, Pull, Stream}
+import fs2.Stream
 import fs2.io.tcp.Socket
 import io.chrisdavenport.log4cats.SelfAwareStructuredLogger
 import io.chrisdavenport.log4cats.slf4j.Slf4jLogger
-import task4s.ChannelService
-import task4s.remote.serialize._
 import task4s.remote.tcp.{SocketClientStream, SocketServerStream, TcpSocketConfig}
 
-class Service[F[_]: Concurrent: ContextShift](val cs: ChannelService[F])(implicit val acg: AsynchronousChannelGroup) {
+class Service[F[_]: Concurrent: ContextShift](implicit val acg: AsynchronousChannelGroup) {
 
   import Service._
 
-  private implicit val log: SelfAwareStructuredLogger[F] = Slf4jLogger.unsafeCreate[F]
+  private val parser = new ProtocolParser[F]
 
-  private val serializer = SerializationProvider.serializer
+  private implicit val log: SelfAwareStructuredLogger[F] = Slf4jLogger.unsafeCreate[F]
 
   private def reactor(socket: Socket[F]): Stream[F, Unit] =
     for {
-      message <- socket.reads(ChunkSize).through(extract())
-      _ <- Protocol.parse(message)
+      message <- socket.reads(ChunkSize).through(parser.parse)
       _ <- Stream.eval(socket.endOfOutput)
     } yield ()
-
-  def extract(): Pipe[F, Byte, Message] = {
-    def statefulPull(stream: Stream[F, Byte]): Pull[F, Message, Unit] =
-      stream.pull.uncons.flatMap {
-        case Some((head, tail)) =>
-          serializer.fromBinary[Message](head.toArray) match {
-            case Right(message) => Pull.output(Chunk.singleton(message)) >> statefulPull(tail)
-            case Left(cause) => Pull.raiseError(cause)
-          }
-        case None =>
-          Pull.done
-      }
-
-    source =>
-      statefulPull(source).stream
-  }
 
   def bindAndHandle: Stream[F, Unit] = SocketServerStream[F](reactor)
 
@@ -55,14 +36,10 @@ object Service {
   sealed trait BatchState
   case object FlushOut extends BatchState
 
-  def apply[F[_]: Concurrent: ContextShift](
-      channelService: ChannelService[F]
-  )(implicit acg: AsynchronousChannelGroup): Stream[F, Unit] =
-    new Service(channelService).bindAndHandle
+  def apply[F[_]: Concurrent: ContextShift](implicit acg: AsynchronousChannelGroup): Stream[F, Unit] =
+    new Service().bindAndHandle
 
-  /*
   def remote[F[_]: Concurrent: ContextShift](rmt: TcpSocketConfig, handler: Socket[F] => Stream[F, Unit])(
       implicit acg: AsynchronousChannelGroup
   ): Stream[F, Unit] = new Service().remote(rmt, handler)
- */
 }
