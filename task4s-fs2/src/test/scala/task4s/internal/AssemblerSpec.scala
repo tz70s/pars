@@ -3,7 +3,6 @@ package task4s.internal
 import cats.effect.IO
 import fs2.Stream
 import org.scalatest.{Matchers, WordSpec}
-import MachineError.MachineNotFoundException
 import task4s.internal.Assembler.Event
 import task4s.internal.Assembler.Signal.Spawn
 import task4s.{Channel, Machine}

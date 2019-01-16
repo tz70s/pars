@@ -2,7 +2,6 @@ package task4s.internal
 
 import cats.effect.Sync
 import fs2.Stream
-import MachineError.MachineNotFoundException
 import task4s._
 
 import scala.collection.concurrent.TrieMap
