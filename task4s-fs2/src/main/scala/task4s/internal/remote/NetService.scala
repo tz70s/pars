@@ -21,12 +21,12 @@ private[task4s] class ServerImpl[F[_]: Concurrent: ContextShift](private val ass
 
   private def reactor(socket: Socket[F]): Stream[F, Unit] = {
     val retValues = for {
-      packet <- parser.parse(socket)
+      packet <- socket.reads(Protocol.ChunkSize).through(parser.bufferToPacket)
       s <- assembler.eval(packet)
       _ <- Stream.eval(Logger[F].info(s"Server got the packet $packet and evaluated the result as: $s"))
     } yield s
 
-    parser.unparse(socket, retValues).onFinalize(socket.endOfOutput)
+    retValues.through(parser.packetToBuffer).to(socket.writes()).onFinalize(socket.endOfOutput)
   }
 
   def bindAndHandle: Stream[F, Unit] = SocketServerStream[F].handle(reactor)
@@ -41,9 +41,14 @@ private[task4s] class ClientImpl[F[_]: Concurrent: ContextShift](implicit val ac
   def writeN(rmt: TcpSocketConfig, source: Stream[F, Packet], signal: SignallingRef[F, Boolean]): Stream[F, Packet] = {
     def cycle(queue: Queue[F, Packet], signal: SignallingRef[F, Boolean]): Stream[F, Unit] =
       remote(rmt) { socket =>
-        parser.unparse(socket, source).onFinalize(socket.endOfOutput) ++ parser
-          .parse(socket)
+        val writes = source.through(parser.packetToBuffer).to(socket.writes()).onFinalize(socket.endOfOutput)
+
+        val reads = socket
+          .reads(Protocol.ChunkSize)
+          .through(parser.bufferToPacket)
           .to(queue.enqueue)
+
+        writes ++ reads
       }
 
     val stream = for {
@@ -76,7 +81,6 @@ private[task4s] class NetService[F[_]: Concurrent: ContextShift](implicit val ac
 }
 
 private[task4s] object NetService {
-
   def address: TcpSocketConfig = SocketServerStream.ServerSocketConfig
 
   def apply[F[_]: Concurrent: ContextShift](implicit acg: AsynchronousChannelGroup) = new NetService[F]()
