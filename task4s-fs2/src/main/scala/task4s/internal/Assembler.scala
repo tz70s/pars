@@ -21,9 +21,16 @@ private[task4s] class Assembler[F[_]: Sync] {
 
   private val handler = new SignalHandler[F]
 
-  def handleSignal(signal: Signal): F[Unit] = handler.handle(signal)
+  def eval(packet: Packet): Stream[F, OutGoing] =
+    packet match {
+      case s: Signal => handleSignal(s).map(_ => OutGoing.Ok)
+      case e: Event => handleEvent(e).map(s => OutGoing.ReturnVal(s))
+      case _ => throw new IllegalAccessError("OutGoing packet should not be evaluated.")
+    }
 
-  def handleEvent(event: Event): Stream[F, _] =
+  private def handleSignal(signal: Signal): Stream[F, Unit] = Stream.eval(handler.handle(signal))
+
+  private def handleEvent(event: Event): Stream[F, _] =
     event match {
       case Send(to, s: Stream[F, _]) => assemble(s, to)
     }
@@ -31,7 +38,7 @@ private[task4s] class Assembler[F[_]: Sync] {
   /**
    * The assemble is called when stream of specific channel is arrived.
    */
-  def assemble(stream: Stream[F, _], channel: UnsafeChannel): Stream[F, _] =
+  private def assemble(stream: Stream[F, _], channel: UnsafeChannel): Stream[F, _] =
     for {
       o <- Stream.eval(handler.lookUp(channel))
       m <- try Stream.emit(o.get)
@@ -45,9 +52,10 @@ private[task4s] class Assembler[F[_]: Sync] {
 private[task4s] object Assembler {
   type UnsafeChannel = Channel[_]
 
-  sealed trait Command
-  sealed trait Event extends Command
-  sealed trait Signal extends Command
+  sealed trait Packet
+  sealed trait Event extends Packet
+  sealed trait Signal extends Packet
+  sealed trait OutGoing extends Packet
 
   object Event {
     case class Send[F[_], T](to: Channel[_], event: Stream[F, T]) extends Event
@@ -56,6 +64,11 @@ private[task4s] object Assembler {
   object Signal {
     case class Spawn[F[_], -I, +O](machine: FlyingMachine[F, I, O]) extends Signal
     case class Down(channel: Channel[_]) extends Signal
+  }
+
+  object OutGoing {
+    case object Ok extends OutGoing
+    case class ReturnVal(value: Any) extends OutGoing
   }
 }
 

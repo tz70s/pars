@@ -15,18 +15,20 @@ import io.chrisdavenport.log4cats.slf4j.Slf4jLogger
 case class TcpSocketConfig(hostname: String, port: Int)
 
 /**
- * Similar to Akka.
- *
  * We'll build a dual visible channels for peers, but composed via Stream.
  * Therefore, both server and client should be transparent to user.
+ *
+ * @example {{{
+ * val stream = SocketServerStream[IO].handle { socket => socket.reads(1024).through(extractor) }
+ * }}}
  */
-class SocketServerStream[F[_]: Concurrent: ContextShift](
-    config: TcpSocketConfig = pureconfig.loadConfigOrThrow[TcpSocketConfig]("task4s.internal.remote.tcp")
-)(implicit acg: AsynchronousChannelGroup) {
+private[remote] class SocketServerStream[F[_]: Concurrent: ContextShift](implicit acg: AsynchronousChannelGroup) {
+
+  import SocketServerStream._
 
   private implicit val log: SelfAwareStructuredLogger[F] = Slf4jLogger.unsafeCreate[F]
 
-  val address = new InetSocketAddress(config.hostname, config.port)
+  private val address = new InetSocketAddress(ServerSocketConfig.hostname, ServerSocketConfig.port)
 
   private def sockets: Stream[F, Socket[F]] =
     for {
@@ -35,33 +37,33 @@ class SocketServerStream[F[_]: Concurrent: ContextShift](
       socket <- Stream.resource(resource)
     } yield socket
 
-  def ofStream(handler: Socket[F] => Stream[F, Unit]): Stream[F, Unit] =
+  def handle(handler: Socket[F] => Stream[F, Unit]): Stream[F, Unit] =
     sockets.map(socket => handler(socket)).parJoinUnbounded
 }
 
-class SocketClientStream[F[_]: Concurrent: ContextShift](remote: TcpSocketConfig)(
+private[remote] class SocketClientStream[F[_]: Concurrent: ContextShift]()(
     implicit acg: AsynchronousChannelGroup
 ) {
-  val address = new InetSocketAddress(remote.hostname, remote.port)
-
-  def sockets: Stream[F, Socket[F]] =
+  private def connection(address: InetSocketAddress): Stream[F, Socket[F]] =
     Stream.resource(Socket.client[F](address))
 
-  def ofStream(handler: Socket[F] => Stream[F, Unit]): Stream[F, Unit] =
-    sockets.map(socket => handler(socket)).parJoinUnbounded
+  def handle(remote: TcpSocketConfig, handler: Socket[F] => Stream[F, Unit]): Stream[F, Unit] = {
+    val address = new InetSocketAddress(remote.hostname, remote.port)
+    connection(address).map(socket => handler(socket)).parJoinUnbounded
+  }
 }
 
 object SocketServerStream {
-  def apply[F[_]: Concurrent: ContextShift](
-      handler: Socket[F] => Stream[F, Unit]
-  )(implicit acg: AsynchronousChannelGroup): Stream[F, Unit] =
-    new SocketServerStream[F]().ofStream(handler)
+
+  val ServerSocketConfig = pureconfig.loadConfigOrThrow[TcpSocketConfig]("task4s.remote.tcp")
+
+  def apply[F[_]: Concurrent: ContextShift](implicit acg: AsynchronousChannelGroup): SocketServerStream[F] =
+    new SocketServerStream[F]()
 }
 
 object SocketClientStream {
-  def apply[F[_]: Concurrent: ContextShift](remote: TcpSocketConfig, handler: Socket[F] => Stream[F, Unit])(
-      implicit acg: AsynchronousChannelGroup
-  ): Stream[F, Unit] = new SocketClientStream[F](remote).ofStream(handler)
+  def apply[F[_]: Concurrent: ContextShift](implicit acg: AsynchronousChannelGroup): SocketClientStream[F] =
+    new SocketClientStream[F]()
 }
 
 object AsyncChannelProvider {
@@ -69,7 +71,7 @@ object AsyncChannelProvider {
   private case class DefaultWorkStealingPoolSizeConfig(min: Int, max: Int)
 
   private val DefaultWorkStealingPoolSize =
-    pureconfig.loadConfigOrThrow[DefaultWorkStealingPoolSizeConfig]("task4s.internal.remote.thread-pool.default")
+    pureconfig.loadConfigOrThrow[DefaultWorkStealingPoolSizeConfig]("task4s.remote.thread-pool.default")
 
   /**
    * By default use the work stealing thread pool for async channel.

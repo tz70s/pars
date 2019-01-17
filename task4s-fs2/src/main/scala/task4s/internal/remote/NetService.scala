@@ -4,37 +4,80 @@ import java.nio.channels.AsynchronousChannelGroup
 
 import cats.effect.{Concurrent, ContextShift}
 import fs2.Stream
+import fs2.concurrent.{Queue, SignallingRef}
 import fs2.io.tcp.Socket
-import io.chrisdavenport.log4cats.SelfAwareStructuredLogger
+import io.chrisdavenport.log4cats.{Logger, SelfAwareStructuredLogger}
 import io.chrisdavenport.log4cats.slf4j.Slf4jLogger
+import task4s.internal.Assembler
+import task4s.internal.Assembler.Packet
 import task4s.internal.remote.tcp.{SocketClientStream, SocketServerStream, TcpSocketConfig}
 
-private[task4s] class NetService[F[_]: Concurrent: ContextShift]()(
+private[task4s] class ServerImpl[F[_]: Concurrent: ContextShift](private val assembler: Assembler[F])(
     implicit val acg: AsynchronousChannelGroup
 ) {
+  private val parser = new ProtocolParser[F]
+
+  private implicit val log: SelfAwareStructuredLogger[F] = Slf4jLogger.unsafeCreate[F]
+
+  private def reactor(socket: Socket[F]): Stream[F, Unit] = {
+    val retValues = for {
+      packet <- parser.parse(socket)
+      s <- assembler.eval(packet)
+      _ <- Stream.eval(Logger[F].info(s"Server got the packet $packet and evaluated the result as: $s"))
+    } yield s
+
+    parser.unparse(socket, retValues).onFinalize(socket.endOfOutput)
+  }
+
+  def bindAndHandle: Stream[F, Unit] = SocketServerStream[F].handle(reactor)
+}
+
+private[task4s] class ClientImpl[F[_]: Concurrent: ContextShift](implicit val acg: AsynchronousChannelGroup) {
 
   private val parser = new ProtocolParser[F]
 
   private implicit val log: SelfAwareStructuredLogger[F] = Slf4jLogger.unsafeCreate[F]
 
-  private def reactor(socket: Socket[F]): Stream[F, Unit] =
-    for {
-      message <- parser.parse(socket)
-      _ <- Stream.eval(socket.endOfOutput)
-    } yield ()
+  def writeN(rmt: TcpSocketConfig, source: Stream[F, Packet], signal: SignallingRef[F, Boolean]): Stream[F, Packet] = {
+    def cycle(queue: Queue[F, Packet], signal: SignallingRef[F, Boolean]): Stream[F, Unit] =
+      remote(rmt) { socket =>
+        parser.unparse(socket, source).onFinalize(socket.endOfOutput) ++ parser
+          .parse(socket)
+          .to(queue.enqueue)
+      }
 
-  def bindAndHandle: Stream[F, Unit] = SocketServerStream[F](reactor)
+    val stream = for {
+      q <- Stream.eval(Queue.bounded[F, Packet](10))
+      packet <- q.dequeue concurrently cycle(q, signal)
+      _ <- Stream.eval(Logger[F].info(s"Client get the return packet $packet"))
+    } yield packet
 
-  def remote(rmt: TcpSocketConfig, handler: Socket[F] => Stream[F, Unit]): Stream[F, Unit] =
-    SocketClientStream[F](rmt, handler)
+    stream.interruptWhen(signal)
+  }
+
+  private def remote(rmt: TcpSocketConfig)(handler: Socket[F] => Stream[F, Unit]): Stream[F, Unit] =
+    SocketClientStream[F].handle(rmt, handler)
+}
+
+/**
+ * Intermediate class for prefix context type.
+ *
+ * @example {{{
+ * val server = NetService[IO].bindAndHandle(assembler)
+ *
+ * val client = NetService[IO].writeN(remote, someStream)
+ * }}}
+ */
+private[task4s] class NetService[F[_]: Concurrent: ContextShift](implicit val acg: AsynchronousChannelGroup) {
+  def bindAndHandle(assembler: Assembler[F]): Stream[F, Unit] = new ServerImpl[F](assembler).bindAndHandle
+
+  def writeN(rmt: TcpSocketConfig, source: Stream[F, Packet], signal: SignallingRef[F, Boolean]): Stream[F, Packet] =
+    new ClientImpl[F].writeN(rmt, source, signal)
 }
 
 private[task4s] object NetService {
 
-  def apply[F[_]: Concurrent: ContextShift](implicit acg: AsynchronousChannelGroup): Stream[F, Unit] =
-    new NetService().bindAndHandle
+  def address: TcpSocketConfig = SocketServerStream.ServerSocketConfig
 
-  def remote[F[_]: Concurrent: ContextShift](rmt: TcpSocketConfig, handler: Socket[F] => Stream[F, Unit])(
-      implicit acg: AsynchronousChannelGroup
-  ): Stream[F, Unit] = new NetService().remote(rmt, handler)
+  def apply[F[_]: Concurrent: ContextShift](implicit acg: AsynchronousChannelGroup) = new NetService[F]()
 }

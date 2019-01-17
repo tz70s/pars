@@ -3,7 +3,7 @@ package task4s.internal
 import cats.effect.IO
 import fs2.Stream
 import org.scalatest.{Matchers, WordSpec}
-import task4s.internal.Assembler.Event
+import task4s.internal.Assembler.{Event, OutGoing}
 import task4s.internal.Assembler.Signal.Spawn
 import task4s.{Channel, Machine}
 
@@ -29,12 +29,12 @@ class AssemblerSpec extends WordSpec with Matchers {
       }
 
       val result = for {
-        _ <- Stream.eval(assembler.handleSignal(Spawn(m)))
-        s <- assembler.handleEvent(Event.Send(channel, Stream.emits(source)))
+        _ <- assembler.eval(Spawn(m))
+        s <- assembler.eval(Event.Send(channel, Stream.emits(source)))
 
         // After assembling, we'll require a manual cast.
         // Hence, we need an additional method to encapsulate this behavior.
-        i = s.asInstanceOf[Int]
+        i = s match { case OutGoing.ReturnVal(value) => value.asInstanceOf[Int]; case _ => 0 }
       } yield i
 
       result.compile.toList.unsafeRunSync() shouldBe expect
@@ -46,7 +46,7 @@ class AssemblerSpec extends WordSpec with Matchers {
       val assembler = new Assembler[IO]
 
       val result = for {
-        s <- assembler.assemble(Stream.emit(1), channel)
+        s <- assembler.eval(Event.Send(channel, Stream(1)))
         i = s.asInstanceOf[Int]
       } yield i
 

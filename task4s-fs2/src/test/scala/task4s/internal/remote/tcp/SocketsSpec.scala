@@ -27,7 +27,7 @@ class SocketsSpec extends WordSpec with Matchers with BeforeAndAfterAll {
       }
 
       val remote = TcpSocketConfig("127.0.0.1", 9977)
-      val stream = SocketClientStream(remote, handler)
+      val stream = SocketClientStream[IO].handle(remote, handler)
 
       stream.compile.drain.unsafeRunSync()
     }
