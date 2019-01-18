@@ -1,14 +1,13 @@
 package task4s
 
 import cats.effect.IO
-import org.scalatest.{Matchers, WordSpec}
 import fs2.Stream
 import io.chrisdavenport.log4cats.Logger
 import io.chrisdavenport.log4cats.slf4j.Slf4jLogger
 
-class MachineSpec extends WordSpec with Matchers {
+class MachineSpec extends Task4sSpec {
 
-  private implicit val log = Slf4jLogger.unsafeCreate[IO]
+  implicit val log = Slf4jLogger.unsafeCreate[IO]
 
   "Machine Factories" should {
 

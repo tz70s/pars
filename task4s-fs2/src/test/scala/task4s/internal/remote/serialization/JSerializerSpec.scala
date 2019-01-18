@@ -1,12 +1,11 @@
 package task4s.internal.remote.serialization
 
-import org.scalatest.{Matchers, WordSpec}
 import cats.implicits._
-import task4s.{SerializationProvider, Serializer}
+import task4s.{SerializationProvider, Serializer, Task4sSpec}
 
 case class NormalFormCaseClazz(index: Int, value: String)
 
-class SerializerSpec extends WordSpec with Matchers {
+class SerializerSpec extends Task4sSpec {
 
   val serializer: Serializer = SerializationProvider.serializer
 

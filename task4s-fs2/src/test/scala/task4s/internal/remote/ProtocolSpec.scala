@@ -1,14 +1,11 @@
 package task4s.internal.remote
 
-import cats.effect.{ContextShift, IO}
-import org.scalatest.{Matchers, WordSpec}
-import task4s.{Channel, SerializationProvider}
+import cats.effect.IO
+import task4s.{Channel, SerializationProvider, Task4sSpec}
 import task4s.internal.Assembler.Event.Send
 import fs2.Stream
 
-class ProtocolSpec extends WordSpec with Matchers {
-
-  implicit val cs: ContextShift[IO] = IO.contextShift(scala.concurrent.ExecutionContext.Implicits.global)
+class ProtocolSpec extends Task4sSpec {
 
   "ProtocolParser" should {
 

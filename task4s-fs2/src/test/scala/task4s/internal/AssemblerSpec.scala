@@ -2,12 +2,11 @@ package task4s.internal
 
 import cats.effect.IO
 import fs2.Stream
-import org.scalatest.{Matchers, WordSpec}
 import task4s.internal.Assembler.{Event, OutGoing}
 import task4s.internal.Assembler.Signal.Spawn
-import task4s.{Channel, Machine}
+import task4s.{Channel, Machine, Task4sSpec}
 
-class AssemblerSpec extends WordSpec with Matchers {
+class AssemblerSpec extends Task4sSpec {
 
   "Assembler and SignalHandler" should {
     "work with crud messages and reflect type correctly" in {

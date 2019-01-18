@@ -87,6 +87,8 @@ val JvmOpts = Seq(
   "-Xms512M",
   "-Xmx4G",
   "-XX:+UseG1GC",
+  "-XX:MaxMetaspaceSize=256M",
+  "-XX:MetaspaceSize=256M",
   "-Dcom.sun.management.jmxremote.authenticate=false",
   "-Dcom.sun.management.jmxremote.ssl=false",
   "-Djava.rmi.server.hostname=localhost"
@@ -95,6 +97,8 @@ val JvmOpts = Seq(
 lazy val jvmForkSettings = Seq(
   run / fork := true,
   run / javaOptions ++= JvmOpts,
+  Test / fork := true,
+  Test / javaOptions ++= JvmOpts,
   reStart / javaOptions ++= JvmOpts,
   outputStrategy := Some(StdoutOutput)
 )
@@ -122,6 +126,7 @@ lazy val `task4s-fs2` = (project in file("task4s-fs2"))
   .settings(libraryDependencies ++= librariesN)
   .settings(addCompilerPlugin("org.spire-math" %% "kind-projector" % "0.9.8"))
   .settings(testFilter)
+  .settings(jvmForkSettings)
 
 lazy val `task4s-root` = (project in file("."))
   .aggregate(task4s, site, example, `task4s-jmh`)

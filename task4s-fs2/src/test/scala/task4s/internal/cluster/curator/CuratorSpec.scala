@@ -1,15 +1,12 @@
 package task4s.internal.cluster.curator
 
-import cats.effect.{ContextShift, IO}
+import cats.effect.IO
 import org.apache.curator.test.TestingServer
-import org.scalatest.{BeforeAndAfterAll, Matchers, WordSpec}
+import org.scalatest.BeforeAndAfterAll
 import fs2.Stream
+import task4s.Task4sSpec
 
-import scala.concurrent.ExecutionContext.Implicits.global
-
-class CuratorSpec extends WordSpec with Matchers with BeforeAndAfterAll {
-
-  implicit val cs: ContextShift[IO] = IO.contextShift(global)
+class CuratorSpec extends Task4sSpec with BeforeAndAfterAll {
 
   val zkServer = new TestingServer()
   val connectionString: String = zkServer.getConnectString

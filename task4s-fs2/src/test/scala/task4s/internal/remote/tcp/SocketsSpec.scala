@@ -2,18 +2,21 @@ package task4s.internal.remote.tcp
 
 import java.nio.channels.AsynchronousChannelGroup
 
-import cats.effect.{ContextShift, IO}
+import cats.effect.IO
 import fs2.Chunk
 import fs2.io.tcp.Socket
-import org.scalatest.{BeforeAndAfterAll, Matchers, WordSpec}
+import org.scalatest.BeforeAndAfterAll
 import fs2.Stream
+import task4s.Task4sSpec
 
-class SocketsSpec extends WordSpec with Matchers with BeforeAndAfterAll {
+class SocketsSpec extends Task4sSpec with BeforeAndAfterAll {
 
   implicit val acg: AsynchronousChannelGroup = AsyncChannelProvider.instance(8)
-  implicit val cs: ContextShift[IO] = IO.contextShift(scala.concurrent.ExecutionContext.Implicits.global)
 
-  override def afterAll(): Unit = acg.shutdown()
+  override def afterAll(): Unit = {
+    acg.shutdownNow()
+    super.afterAll()
+  }
 
   "Sockets" should {
 

@@ -1,15 +1,11 @@
 package task4s
 
 import cats.effect.IO
-import org.scalatest.{Matchers, WordSpec}
 
-import scala.concurrent.ExecutionContext.Implicits.global
 import fs2.Stream
 import fs2.concurrent.Queue
 
-class ChannelSpec extends WordSpec with Matchers {
-
-  implicit val cs = IO.contextShift(global)
+class ChannelSpec extends Task4sSpec {
 
   "Channel" should {}
 

@@ -2,24 +2,25 @@ package task4s.internal.remote
 
 import java.nio.channels.AsynchronousChannelGroup
 
-import cats.effect.{ContextShift, IO}
+import cats.effect.IO
 import fs2.Stream
 import fs2.concurrent.SignallingRef
-import org.scalatest.{BeforeAndAfterAll, Matchers, WordSpec}
-import task4s.{Channel, Machine}
+import org.scalatest.BeforeAndAfterAll
+import task4s.{Channel, Machine, Task4sSpec}
 import task4s.internal.Assembler
 import task4s.internal.Assembler.Event.Send
 import task4s.internal.Assembler.OutGoing.ReturnVal
 import task4s.internal.Assembler.Signal.Spawn
 import task4s.internal.remote.tcp.AsyncChannelProvider
 
-class NetServiceSpec extends WordSpec with Matchers with BeforeAndAfterAll {
+class NetServiceSpec extends Task4sSpec with BeforeAndAfterAll {
 
   implicit val acg: AsynchronousChannelGroup = AsyncChannelProvider.instance(8)
-  implicit val cs: ContextShift[IO] = IO.contextShift(scala.concurrent.ExecutionContext.Implicits.global)
-  implicit val timer = IO.timer(scala.concurrent.ExecutionContext.Implicits.global)
 
-  override def afterAll(): Unit = acg.shutdownNow()
+  override def afterAll(): Unit = {
+    acg.shutdownNow()
+    super.afterAll()
+  }
 
   "NetService" should {
     "spawn flying machine and collect data back after evaluation" in {
