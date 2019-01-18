@@ -7,14 +7,15 @@ import task4s._
 import scala.collection.concurrent.TrieMap
 
 /**
- * The assembler '''assemble''' machine to stream.
  * Note that this is a '''DARK SIDE''' behavior which contains unavoidable ''Any'' cast and required high encapsulation.
  *
- * The assembled stream should be whatever cast back to normal type.
+ * For remotely assemble machine, we lacks of type information for '''return type''', and also we '''don't''' really need it.
+ *
+ * However, the assembled stream should be cast back to normal type after evaluation at the call side or composition point.
  */
-private[task4s] class Assembler[F[_]: Sync] {
+private[task4s] class UnsafeFacade[F[_]: Sync] {
 
-  import Assembler._
+  import UnsafeFacade._
   import Event._
 
   type UnsafeMachine = Machine[F, _, _]
@@ -25,7 +26,7 @@ private[task4s] class Assembler[F[_]: Sync] {
     packet match {
       case s: Signal => handleSignal(s).map(_ => OutGoing.Ok)
       case e: Event => handleEvent(e).map(s => OutGoing.ReturnVal(s))
-      case _ => throw new IllegalAccessError("OutGoing packet should not be evaluated.")
+      case _ => throw new IllegalAccessError("OutGoing packet should not be evaluated in assembler.")
     }
 
   private def handleSignal(signal: Signal): Stream[F, Unit] = Stream.eval(handler.handle(signal))
@@ -45,11 +46,14 @@ private[task4s] class Assembler[F[_]: Sync] {
       catch {
         case _: Throwable => Stream.raiseError(MachineNotFoundException(s"Not found machine with channel $channel"))
       }
-      s <- m.asInstanceOf[Machine[F, Any, _]].assemble(stream)
+      s <- m.asInstanceOf[Machine[F, Any, _]].evaluateToStream(stream)
     } yield s
 }
 
-private[task4s] object Assembler {
+private[task4s] object UnsafeFacade {
+
+  def apply[F[_]: Sync](): UnsafeFacade[F] = new UnsafeFacade()
+
   type UnsafeChannel = Channel[_]
 
   sealed trait Packet
@@ -74,7 +78,7 @@ private[task4s] object Assembler {
 
 private[task4s] class SignalHandler[F[_]: Sync] {
 
-  import Assembler._
+  import UnsafeFacade._
   import Signal._
 
   type UnsafeMachine = Machine[F, _, _]

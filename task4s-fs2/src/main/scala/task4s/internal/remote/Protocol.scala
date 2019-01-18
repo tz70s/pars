@@ -3,11 +3,9 @@ package task4s.internal.remote
 import cats.effect.Concurrent
 import fs2.{Chunk, Pipe, Pull, Stream}
 import task4s.SerializationProvider
-import task4s.internal.Assembler.Packet
+import task4s.internal.UnsafeFacade.Packet
 
 private[task4s] object Protocol {
-  val ChunkSize: Int = pureconfig.loadConfigOrThrow[Int]("task4s.remote.chunk-size")
-
   case class Header(tpe: Message)
   case class Message(header: Header, value: AnyRef)
 }
@@ -45,7 +43,6 @@ private[task4s] class ProtocolParser[F[_]: Concurrent] {
 }
 
 private[task4s] object ProtocolParser {
-
   sealed trait BatchState
   case object FlushOut extends BatchState
 }

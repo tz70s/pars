@@ -2,32 +2,34 @@ package task4s
 
 import cats.effect.IO
 import fs2.Stream
-import io.chrisdavenport.log4cats.Logger
+import io.chrisdavenport.log4cats.{Logger, SelfAwareStructuredLogger}
 import io.chrisdavenport.log4cats.slf4j.Slf4jLogger
+import task4s.internal.{ForgeImpl, UnsafeFacade}
 
 class MachineSpec extends Task4sSpec {
 
-  implicit val log = Slf4jLogger.unsafeCreate[IO]
+  implicit val log: SelfAwareStructuredLogger[IO] = Slf4jLogger.unsafeCreate[IO]
+  implicit val mill: Forge[IO] = ForgeImpl(UnsafeFacade())
 
   "Machine Factories" should {
 
     "applicable for pure vararg values emission" in {
       val m = Machine(1, 2, 3)
-      val s = m.assemble
-      s.compile.toList shouldBe List(1, 2, 3)
+      val s = m.evaluateToStream
+      s.compile.toList.unsafeRunSync() shouldBe List(1, 2, 3)
     }
 
     "applicable for pure single value emission" in {
       val m = Machine.emit(1)
-      val s = m.assemble
-      s.compile.toList shouldBe List(1)
+      val s = m.evaluateToStream
+      s.compile.toList.unsafeRunSync() shouldBe List(1)
     }
 
     "applicable for pure sequence values emission" in {
       val expect = List(1, 2, 3, 4, 5)
       val m = Machine.emits(expect)
-      val s = m.assemble
-      s.compile.toList shouldBe expect
+      val s = m.evaluateToStream
+      s.compile.toList.unsafeRunSync() shouldBe expect
     }
 
     "applicable for side effected stream evaluation" in {
@@ -39,7 +41,7 @@ class MachineSpec extends Task4sSpec {
         } yield i
       }
 
-      m.assemble.compile.toList.unsafeRunSync() shouldBe expect
+      m.evaluateToStream.compile.toList.unsafeRunSync() shouldBe expect
     }
   }
 
@@ -59,7 +61,7 @@ class MachineSpec extends Task4sSpec {
       val binary = serializer.serialize(m)
       val after = binary.flatMap(b => serializer.deserialize[FlyingMachine[IO, Unit, Int]](b))
 
-      after.toTry.get.assemble.compile.toList.unsafeRunSync() shouldBe expect
+      after.toTry.get.evaluateToStream.compile.toList.unsafeRunSync() shouldBe expect
     }
   }
 }

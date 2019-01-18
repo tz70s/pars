@@ -2,19 +2,21 @@ package task4s.internal
 
 import cats.effect.IO
 import fs2.Stream
-import task4s.internal.Assembler.{Event, OutGoing}
-import task4s.internal.Assembler.Signal.Spawn
-import task4s.{Channel, Machine, Task4sSpec}
+import task4s.internal.UnsafeFacade.{Event, OutGoing}
+import task4s.internal.UnsafeFacade.Signal.Spawn
+import task4s.{Channel, Forge, Machine, Task4sSpec}
 
-class AssemblerSpec extends Task4sSpec {
+class UnsafeFacadeSpec extends Task4sSpec {
 
-  "Assembler and SignalHandler" should {
+  implicit val mill: Forge[IO] = ForgeImpl(UnsafeFacade())
+
+  "UnsafeAssembler and SignalHandler" should {
     "work with crud messages and reflect type correctly" in {
 
       val source = List(1, 2, 3)
       val expect = source.map(_ + 1)
 
-      val assembler = new Assembler[IO]
+      val facade = new UnsafeFacade[IO]
 
       val channel = Channel[Int]("TestChannel")
 
@@ -28,8 +30,8 @@ class AssemblerSpec extends Task4sSpec {
       }
 
       val result = for {
-        _ <- assembler.eval(Spawn(m))
-        s <- assembler.eval(Event.Send(channel, Stream.emits(source)))
+        _ <- facade.eval(Spawn(m))
+        s <- facade.eval(Event.Send(channel, Stream.emits(source)))
 
         // After assembling, we'll require a manual cast.
         // Hence, we need an additional method to encapsulate this behavior.
@@ -42,10 +44,10 @@ class AssemblerSpec extends Task4sSpec {
     "intercept assemble failure" in {
       val channel = Channel[Int]("TestChannel")
 
-      val assembler = new Assembler[IO]
+      val facade = new UnsafeFacade[IO]
 
       val result = for {
-        s <- assembler.eval(Event.Send(channel, Stream(1)))
+        s <- facade.eval(Event.Send(channel, Stream(1)))
         i = s.asInstanceOf[Int]
       } yield i
 

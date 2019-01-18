@@ -55,7 +55,7 @@ private[remote] class SocketClientStream[F[_]: Concurrent: ContextShift]()(
 
 object SocketServerStream {
 
-  val ServerSocketConfig = pureconfig.loadConfigOrThrow[TcpSocketConfig]("task4s.remote.tcp")
+  val ServerSocketConfig: TcpSocketConfig = pureconfig.loadConfigOrThrow[TcpSocketConfig]("task4s.remote.tcp")
 
   def apply[F[_]: Concurrent: ContextShift](implicit acg: AsynchronousChannelGroup): SocketServerStream[F] =
     new SocketServerStream[F]()

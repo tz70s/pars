@@ -6,16 +6,17 @@ import cats.effect.IO
 import fs2.Stream
 import fs2.concurrent.SignallingRef
 import org.scalatest.BeforeAndAfterAll
-import task4s.{Channel, Machine, Task4sSpec}
-import task4s.internal.Assembler
-import task4s.internal.Assembler.Event.Send
-import task4s.internal.Assembler.OutGoing.ReturnVal
-import task4s.internal.Assembler.Signal.Spawn
+import task4s.{Channel, Forge, Machine, Task4sSpec}
+import task4s.internal.{ForgeImpl, UnsafeFacade}
+import task4s.internal.UnsafeFacade.Event.Send
+import task4s.internal.UnsafeFacade.OutGoing.ReturnVal
+import task4s.internal.UnsafeFacade.Signal.Spawn
 import task4s.internal.remote.tcp.AsyncChannelProvider
 
 class NetServiceSpec extends Task4sSpec with BeforeAndAfterAll {
 
   implicit val acg: AsynchronousChannelGroup = AsyncChannelProvider.instance(8)
+  implicit val mill: Forge[IO] = ForgeImpl(UnsafeFacade())
 
   override def afterAll(): Unit = {
     acg.shutdownNow()
@@ -27,7 +28,7 @@ class NetServiceSpec extends Task4sSpec with BeforeAndAfterAll {
       val source = List(1, 2, 3)
       val expect = List(2, 3, 4)
 
-      val assembler = new Assembler[IO]
+      val assembler = new UnsafeFacade[IO]
       val service = NetService[IO].bindAndHandle(assembler)
 
       val channel = Channel[Int]("TestChannel")

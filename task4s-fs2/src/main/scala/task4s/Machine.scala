@@ -1,6 +1,6 @@
 package task4s
 
-import fs2.{Pure, Stream}
+import fs2.Stream
 
 import scala.reflect.ClassTag
 
@@ -33,18 +33,33 @@ import scala.reflect.ClassTag
  * $ sbt -Dsun.io.serialization.extendedDebugInfo=true test
  * }}}
  */
-class Machine[F[_], -In, +Out] private[task4s] (val process: Stream[F, In] => Stream[F, Out]) extends Serializable {
-  private[task4s] def assemble(in: Stream[F, In]): Stream[F, Out] = process(in)
+abstract class Machine[F[_], -In, +Out] private[task4s] (val process: Stream[F, In] => Stream[F, Out])(
+    @transient implicit val ev: Forge[F]
+) extends Serializable {
 
-  private[task4s] def assemble: Stream[F, Out] = process(Stream.empty)
+  private[task4s] def evaluateToStream(in: Stream[F, In]): Stream[F, Out] = process(in)
+
+  private[task4s] def evaluateToStream: Stream[F, Out] = process(Stream.empty)
 }
+
+/**
+ * Represented as Machine with no input channel.
+ */
+private[task4s] class MachineSource[F[_], +Out](process: Stream[F, Out])(implicit ev: Forge[F])
+    extends Machine((_: Stream[F, Unit]) => process)
 
 /**
  * Represented as machine which can be cluster-wide allocated.
  */
 private[task4s] class FlyingMachine[F[_], -In, +Out](process: Stream[F, In] => Stream[F, Out],
-                                                     val channel: Channel[_ >: In])
+                                                     val channel: Channel[_ >: In])(implicit ev: Forge[F])
     extends Machine[F, In, Out](process)
+
+/**
+ * Represented as Machine with no input channel and cluster-wide allocated.
+ */
+private[task4s] class FlyingMachineSource[F[_], +Out](process: Stream[F, Out])(implicit ev: Forge[F])
+    extends FlyingMachine((_: Stream[F, Unit]) => process, Channel("SystemGeneratedUID"))
 
 object Machine {
 
@@ -54,7 +69,8 @@ object Machine {
    * @see fs2.Stream.apply
    * @param values Varargs of application values.
    */
-  def apply[F[x] >: Pure[x], Out](values: Out*) = new Machine[F, Unit, Out](_ => Stream(values: _*))
+  def apply[F[_], Out](values: Out*)(implicit ev: Forge[F]): MachineSource[F, Out] =
+    new MachineSource[F, Out](Stream(values: _*))
 
   /**
    * Pure value emission for machine, alias to fs2.Stream.emit.
@@ -62,7 +78,8 @@ object Machine {
    * @see fs2.Stream.emit
    * @param value Emits single value.
    */
-  def emit[F[x] >: Pure[x], Out](value: Out) = new Machine[F, Unit, Out](_ => Stream.emit(value))
+  def emit[F[_], Out](value: Out)(implicit ev: Forge[F]): MachineSource[F, Out] =
+    new MachineSource[F, Out](Stream.emit(value))
 
   /**
    * Pure value emission for machine, alias to fs2.Stream.emits.
@@ -70,7 +87,8 @@ object Machine {
    * @see fs2.Stream.emits
    * @param values Emits sequence values.
    */
-  def emits[F[x] >: Pure[x], Out](values: Seq[Out]) = new Machine[F, Unit, Out](_ => Stream.emits(values))
+  def emits[F[_], Out](values: Seq[Out])(implicit ev: Forge[F]): MachineSource[F, Out] =
+    new MachineSource[F, Out](Stream.emits(values))
 
   /**
    * Effective evaluation for machine.
@@ -85,11 +103,9 @@ object Machine {
    * }}}
    *
    * @param stream The evaluated Stream.
-   * @tparam F The effect context F-algebra.
-   * @tparam Out Return type of evaluated stream.
-   * @return Machine instance.
    */
-  def apply[F[_], Out](stream: Stream[F, Out]): Machine[F, Unit, Out] = new Machine(_ => stream)
+  def apply[F[_], Out](stream: Stream[F, Out])(implicit ev: Forge[F]): MachineSource[F, Out] =
+    new MachineSource[F, Out](stream)
 
   /**
    * Concatenate to a specified channel.
@@ -103,7 +119,9 @@ object Machine {
    * @param channel Input channel to evaluated Stream.
    * @param process The pipe process evaluation from a stream to another stream.
    */
-  def concat[F[_], In: ClassTag, Out: ClassTag](channel: Channel[In])(process: Stream[F, In] => Stream[F, Out]) =
+  def concat[F[_], In: ClassTag, Out: ClassTag](
+      channel: Channel[In]
+  )(process: Stream[F, In] => Stream[F, Out])(implicit ev: Forge[F]) =
     new FlyingMachine[F, In, Out](process, channel)
 
   /**
@@ -119,6 +137,6 @@ object Machine {
    * }}}
    * @param stream The evaluated Stream.
    */
-  def offload[F[_], Out: ClassTag](stream: Stream[F, Out]) =
-    new FlyingMachine[F, Unit, Out](_ => stream, Channel("SystemGeneratedUID"))
+  def offload[F[_], Out: ClassTag](stream: Stream[F, Out])(implicit ev: Forge[F]) =
+    new FlyingMachineSource[F, Out](stream)
 }

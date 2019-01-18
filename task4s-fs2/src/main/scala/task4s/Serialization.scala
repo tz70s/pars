@@ -1,7 +1,7 @@
 package task4s
 
 import cats.effect.IO
-import io.chrisdavenport.log4cats.Logger
+import io.chrisdavenport.log4cats.{Logger, SelfAwareStructuredLogger}
 import io.chrisdavenport.log4cats.slf4j.Slf4jLogger
 import task4s.internal.remote.serialization.JSerializer
 
@@ -48,7 +48,7 @@ trait Serializer {
 
 object SerializationProvider {
 
-  private implicit val log = Slf4jLogger.unsafeCreate[IO]
+  private implicit val log: SelfAwareStructuredLogger[IO] = Slf4jLogger.unsafeCreate[IO]
 
   private[task4s] val DefaultJavaSerializer = "DefaultJavaSerializer"
 

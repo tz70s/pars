@@ -2,7 +2,7 @@ package task4s.internal.remote
 
 import cats.effect.IO
 import task4s.{Channel, SerializationProvider, Task4sSpec}
-import task4s.internal.Assembler.Event.Send
+import task4s.internal.UnsafeFacade.Event.Send
 import fs2.Stream
 
 class ProtocolSpec extends Task4sSpec {

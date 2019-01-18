@@ -8,11 +8,11 @@ import fs2.concurrent.{Queue, SignallingRef}
 import fs2.io.tcp.Socket
 import io.chrisdavenport.log4cats.{Logger, SelfAwareStructuredLogger}
 import io.chrisdavenport.log4cats.slf4j.Slf4jLogger
-import task4s.internal.Assembler
-import task4s.internal.Assembler.Packet
+import task4s.internal.UnsafeFacade
+import task4s.internal.UnsafeFacade.Packet
 import task4s.internal.remote.tcp.{SocketClientStream, SocketServerStream, TcpSocketConfig}
 
-private[task4s] class ServerImpl[F[_]: Concurrent: ContextShift](private val assembler: Assembler[F])(
+private[task4s] class ServerImpl[F[_]: Concurrent: ContextShift](private val facade: UnsafeFacade[F])(
     implicit val acg: AsynchronousChannelGroup
 ) {
   private val parser = new ProtocolParser[F]
@@ -21,8 +21,8 @@ private[task4s] class ServerImpl[F[_]: Concurrent: ContextShift](private val ass
 
   private def reactor(socket: Socket[F]): Stream[F, Unit] = {
     val retValues = for {
-      packet <- socket.reads(Protocol.ChunkSize).through(parser.bufferToPacket)
-      s <- assembler.eval(packet)
+      packet <- socket.reads(NetService.SocketReadBufferSize).through(parser.bufferToPacket)
+      s <- facade.eval(packet)
       _ <- Stream.eval(Logger[F].info(s"Server got the packet $packet and evaluated the result as: $s"))
     } yield s
 
@@ -44,7 +44,7 @@ private[task4s] class ClientImpl[F[_]: Concurrent: ContextShift](implicit val ac
         val writes = source.through(parser.packetToBuffer).to(socket.writes()).onFinalize(socket.endOfOutput)
 
         val reads = socket
-          .reads(Protocol.ChunkSize)
+          .reads(NetService.SocketReadBufferSize)
           .through(parser.bufferToPacket)
           .to(queue.enqueue)
 
@@ -74,13 +74,15 @@ private[task4s] class ClientImpl[F[_]: Concurrent: ContextShift](implicit val ac
  * }}}
  */
 private[task4s] class NetService[F[_]: Concurrent: ContextShift](implicit val acg: AsynchronousChannelGroup) {
-  def bindAndHandle(assembler: Assembler[F]): Stream[F, Unit] = new ServerImpl[F](assembler).bindAndHandle
+  def bindAndHandle(facade: UnsafeFacade[F]): Stream[F, Unit] = new ServerImpl[F](facade).bindAndHandle
 
   def writeN(rmt: TcpSocketConfig, source: Stream[F, Packet], signal: SignallingRef[F, Boolean]): Stream[F, Packet] =
     new ClientImpl[F].writeN(rmt, source, signal)
 }
 
 private[task4s] object NetService {
+  val SocketReadBufferSize: Int = pureconfig.loadConfigOrThrow[Int]("task4s.remote.buffer-size")
+
   def address: TcpSocketConfig = SocketServerStream.ServerSocketConfig
 
   def apply[F[_]: Concurrent: ContextShift](implicit acg: AsynchronousChannelGroup) = new NetService[F]()
