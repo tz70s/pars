@@ -116,7 +116,7 @@ lazy val example = (project in file("example"))
 
 lazy val `task4s-jmh` = (project in file("task4s-jmh"))
   .enablePlugins(JmhPlugin)
-  .dependsOn(task4s, example)
+  .dependsOn(`task4s-fs2`)
 
 lazy val testFilter = Seq(
   Test / testOptions := Seq(Tests.Filter(s => !(s.contains("Socket") || s.contains("Curator"))))
