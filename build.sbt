@@ -111,7 +111,7 @@ lazy val site = (project in file("site"))
   .settings(micrositeConf)
 
 lazy val example = (project in file("example"))
-  .dependsOn(task4s)
+  .dependsOn(`task4s-fs2`)
   .settings(jvmForkSettings)
 
 lazy val `task4s-jmh` = (project in file("task4s-jmh"))
