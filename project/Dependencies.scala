@@ -25,7 +25,7 @@ object Dependencies {
   val curatorAsync = "org.apache.curator" % "curator-x-async" % curatorVersion
   val curatorTest = "org.apache.curator" % "curator-test" % curatorVersion % Test
 
-  val curators = Seq(curator, curatorAsync, curatorTest)
+  val curators: Seq[ModuleID] = Seq(curator, curatorAsync, curatorTest)
 
-  val librariesN = Seq(FS2Core, FS2IO, scalaTest, pureConfig, log4cats, logback) ++ curators
+  val librariesN: Seq[ModuleID] = Seq(FS2Core, FS2IO, scalaTest, pureConfig, log4cats, logback) ++ curators
 }

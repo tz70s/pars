@@ -4,7 +4,7 @@ import java.nio.channels.AsynchronousChannelGroup
 
 import cats.effect.{Concurrent, ContextShift}
 import fs2.{Pipe, Stream}
-import fs2.concurrent.{Queue, SignallingRef}
+import fs2.concurrent.Queue
 import fs2.io.tcp.Socket
 import io.chrisdavenport.log4cats.{Logger, SelfAwareStructuredLogger}
 import io.chrisdavenport.log4cats.slf4j.Slf4jLogger
@@ -27,7 +27,11 @@ private[machines] class ServerImpl[F[_]: Concurrent: ContextShift](
       .to(socket.writes())
       .onFinalize(socket.endOfOutput)
 
-  def bindAndHandle(logic: Pipe[F, Protocol, Protocol]): Stream[F, Unit] = SocketServerStream[F].handle(reactor(logic))
+  def bindAndHandle(address: TcpSocketConfig)(logic: Pipe[F, Protocol, Protocol]): Stream[F, Unit] =
+    SocketServerStream[F](Some(address)).handle(reactor(logic))
+
+  def bindAndHandle(logic: Pipe[F, Protocol, Protocol]): Stream[F, Unit] =
+    SocketServerStream[F]().handle(reactor(logic))
 }
 
 private[machines] class ClientImpl[F[_]: Concurrent: ContextShift](implicit val acg: AsynchronousChannelGroup) {
@@ -36,10 +40,8 @@ private[machines] class ClientImpl[F[_]: Concurrent: ContextShift](implicit val 
 
   private implicit val log: SelfAwareStructuredLogger[F] = Slf4jLogger.unsafeCreate[F]
 
-  def writeN(rmt: TcpSocketConfig,
-             source: Stream[F, Protocol],
-             signal: SignallingRef[F, Boolean]): Stream[F, Protocol] = {
-    def cycle(queue: Queue[F, Protocol], signal: SignallingRef[F, Boolean]): Stream[F, Unit] =
+  def writeN(rmt: TcpSocketConfig, source: Stream[F, Protocol]): Stream[F, Protocol] = {
+    def cycle(queue: Queue[F, Protocol]): Stream[F, Unit] =
       remote(rmt) { socket =>
         val writes = source.through(parser.encoder).to(socket.writes()).onFinalize(socket.endOfOutput)
 
@@ -51,13 +53,11 @@ private[machines] class ClientImpl[F[_]: Concurrent: ContextShift](implicit val 
         writes ++ reads
       }
 
-    val stream = for {
+    for {
       q <- Stream.eval(Queue.bounded[F, Protocol](10))
-      packet <- q.dequeue concurrently cycle(q, signal)
-      _ <- Stream.eval(Logger[F].info(s"Client get the return command $packet"))
+      packet <- q.dequeue concurrently cycle(q)
+      _ <- Stream.eval(Logger[F].debug(s"Client get the return command $packet"))
     } yield packet
-
-    stream.interruptWhen(signal)
   }
 
   private def remote(rmt: TcpSocketConfig)(handler: Socket[F] => Stream[F, Unit]): Stream[F, Unit] =
@@ -76,10 +76,11 @@ private[machines] class ClientImpl[F[_]: Concurrent: ContextShift](implicit val 
 private[machines] class NetService[F[_]: Concurrent: ContextShift](implicit val acg: AsynchronousChannelGroup) {
   def bindAndHandle(logic: Pipe[F, Protocol, Protocol]): Stream[F, Unit] = new ServerImpl[F].bindAndHandle(logic)
 
-  def writeN(rmt: TcpSocketConfig,
-             source: Stream[F, Protocol],
-             signal: SignallingRef[F, Boolean]): Stream[F, Protocol] =
-    new ClientImpl[F].writeN(rmt, source, signal)
+  def bindAndHandle(address: TcpSocketConfig, logic: Pipe[F, Protocol, Protocol]): Stream[F, Unit] =
+    new ServerImpl[F].bindAndHandle(address)(logic)
+
+  def writeN(rmt: TcpSocketConfig, source: Stream[F, Protocol]): Stream[F, Protocol] =
+    new ClientImpl[F].writeN(rmt, source)
 }
 
 private[machines] object NetService {

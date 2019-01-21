@@ -1,11 +1,19 @@
+import microsites.MicrositesPlugin
 import microsites.MicrositesPlugin.autoImport._
-import sbt._
+import sbt.{Def, _}
 import sbt.Keys._
 
 object Microsite {
 
   // Micro site configurations.
-  lazy val setting = Seq(
+  lazy val setting: Seq[
+    Def.Setting[_ >: MicrositesPlugin.autoImport.PushWith with Map[
+      String,
+      String
+    ] with Option[String] with String with Boolean with Seq[
+      ModuleID
+    ]]
+  ] = Seq(
     micrositeName := "task4s",
     micrositeDescription := "Tasks for Data-Intensive Applications",
     micrositeAuthor := "Tzu-Chiao Yeh",

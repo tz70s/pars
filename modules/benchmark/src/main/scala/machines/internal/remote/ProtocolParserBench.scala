@@ -2,7 +2,7 @@ package machines.internal.remote
 
 import java.util.concurrent.TimeUnit
 
-import cats.effect.IO
+import cats.effect.{ContextShift, IO}
 import org.openjdk.jmh.annotations._
 import fs2.Stream
 import machines.Channel
@@ -16,7 +16,7 @@ import machines.internal.Protocol.{Event, Protocol}
 @Measurement(iterations = 3, time = 5, timeUnit = TimeUnit.SECONDS)
 class ProtocolParserBench {
 
-  implicit val cs = IO.contextShift(scala.concurrent.ExecutionContext.global)
+  implicit val cs: ContextShift[IO] = IO.contextShift(scala.concurrent.ExecutionContext.global)
 
   @Param(Array("100", "1000", "10000"))
   private var numOfPackets = 0

@@ -1,3 +1,5 @@
 package machines.cluster.internal
 
-class ZookeeperCoordinator {}
+import machines.cluster.Coordinator
+
+class ZookeeperCoordinator extends Coordinator

@@ -1,6 +1,8 @@
 package machines.cluster
+
 import machines.{Channel, FlyingMachine, Strategy}
 import machines.internal.Protocol
+import machines.internal.remote.tcp.TcpSocketConfig
 
 abstract class Coordinator
 
@@ -49,6 +51,11 @@ object CoordinationProtocol {
 
   sealed trait ProxyToCoordinator extends CoordinationProtocol
   sealed trait CoordinatorToProxy extends CoordinationProtocol
+
+  // Health check
+
+  case class Ping(address: TcpSocketConfig) extends ProxyToCoordinator
+  case object Pong extends CoordinatorToProxy
 
   // Allocation related protocol.
 
@@ -104,4 +111,6 @@ object CoordinationProtocol {
    * @param throwable Error cause.
    */
   case class CommandErr(throwable: Throwable) extends ProxyToCoordinator
+
+  case class NoAvailableWorker(message: String) extends Exception(message)
 }

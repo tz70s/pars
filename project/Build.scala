@@ -1,4 +1,6 @@
-import sbt._
+import java.io
+
+import sbt.{Def, _}
 import sbt.Keys._
 import spray.revolver.RevolverPlugin.autoImport.reStart
 
@@ -11,7 +13,9 @@ object Build {
     }
   }
 
-  lazy val shared = Seq(
+  lazy val shared: Seq[Def.Setting[_ >: String with Task[
+    Seq[String]
+  ] <: io.Serializable]] = Seq(
     version := "0.1",
     scalaVersion := "2.12.8",
     scalacOptions ++= Seq(
@@ -30,7 +34,7 @@ object Build {
     )
   )
 
-  val JvmOpts = Seq(
+  val JvmOpts: Seq[String] = Seq(
     "-Xms512M",
     "-Xmx4G",
     "-XX:+UseG1GC",
@@ -41,7 +45,9 @@ object Build {
     "-Djava.rmi.server.hostname=localhost"
   )
 
-  lazy val jvmForkSettings = Seq(
+  lazy val jvmForkSettings: Seq[Def.Setting[_ >: Boolean with Task[
+    Seq[String]
+  ] with Option[OutputStrategy]]] = Seq(
     run / fork := true,
     run / javaOptions ++= JvmOpts,
     Test / fork := true,
@@ -50,7 +56,7 @@ object Build {
     outputStrategy := Some(StdoutOutput)
   )
 
-  lazy val customTestFilter = Seq(
+  lazy val customTestFilter: Seq[Def.Setting[Task[Seq[TestOption]]]] = Seq(
     Test / testOptions := Seq(Tests.Filter(s => !(s.contains("Socket") || s.contains("Curator"))))
   )
 }

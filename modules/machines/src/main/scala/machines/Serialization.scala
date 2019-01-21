@@ -2,7 +2,7 @@ package machines
 
 import cats.effect.IO
 import io.chrisdavenport.log4cats.slf4j.Slf4jLogger
-import io.chrisdavenport.log4cats.{Logger, SelfAwareStructuredLogger}
+import io.chrisdavenport.log4cats.Logger
 import internal.remote.serialization.JSerializer
 
 import scala.reflect.ClassTag
@@ -48,7 +48,7 @@ trait Serializer {
 
 object SerializationProvider {
 
-  private implicit val log: SelfAwareStructuredLogger[IO] = Slf4jLogger.unsafeCreate[IO]
+  private implicit val log: Logger[IO] = Slf4jLogger.unsafeCreate[IO]
 
   private[machines] val DefaultJavaSerializer = "DefaultJavaSerializer"
 

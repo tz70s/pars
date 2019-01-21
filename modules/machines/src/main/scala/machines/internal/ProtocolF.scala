@@ -2,18 +2,20 @@ package machines.internal
 
 import java.nio.channels.AsynchronousChannelGroup
 
-import cats.effect.{Concurrent, ContextShift, Sync}
-import fs2.{Pipe, Stream}
+import cats.effect.{Concurrent, ContextShift, Sync, Timer}
+import fs2.{Pipe, RaiseThrowable, Stream}
 import machines.cluster.CoordinationProtocol.CoordinatorToProxy
 import machines.cluster.CoordinatorProxy
 import machines.internal.Protocol.{ChannelProtocol, Protocol}
 import machines.internal.remote.NetService
 import machines.internal.remote.tcp.TcpSocketConfig
-import machines.{Channel, Machine}
+import machines.{Channel, FlyingMachine, Machine, Strategy}
 
 import scala.collection.concurrent.TrieMap
 
-private[machines] class ProtocolF[F[_]: Concurrent: ContextShift](coordinators: Seq[TcpSocketConfig])(
+private[machines] class ProtocolF[F[_]: Concurrent: ContextShift: Timer: RaiseThrowable](
+    coordinators: Seq[TcpSocketConfig]
+)(
     implicit acg: AsynchronousChannelGroup
 ) {
 
@@ -28,12 +30,17 @@ private[machines] class ProtocolF[F[_]: Concurrent: ContextShift](coordinators: 
     }
   }
 
-  def bindAndHandle: Stream[F, Unit] = NetService[F].bindAndHandle(logic)
+  private val background = Stream(proxy.bind).parJoinUnbounded
+
+  def allocate[I, O](machine: FlyingMachine[F, I, O], strategy: Strategy): Stream[F, Protocol] =
+    proxy.allocate(machine, strategy)
+
+  def bindAndHandle: Stream[F, Unit] = NetService[F].bindAndHandle(logic).concurrently(background)
 }
 
 object ProtocolF {
 
-  def bindAndHandle[F[_]: Concurrent: ContextShift](
+  def bindAndHandle[F[_]: Concurrent: ContextShift: Timer](
       coordinators: Seq[TcpSocketConfig]
   )(implicit acg: AsynchronousChannelGroup): Stream[F, Unit] =
     new ProtocolF[F](coordinators).bindAndHandle

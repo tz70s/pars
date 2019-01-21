@@ -22,13 +22,13 @@ case class TcpSocketConfig(hostname: String, port: Int)
  * val stream = SocketServerStream[IO].handle { socket => socket.reads(1024).through(extractor) }
  * }}}
  */
-private[remote] class SocketServerStream[F[_]: Concurrent: ContextShift](implicit acg: AsynchronousChannelGroup) {
-
-  import SocketServerStream._
+private[remote] class SocketServerStream[F[_]: Concurrent: ContextShift](addressConfig: TcpSocketConfig)(
+    implicit acg: AsynchronousChannelGroup
+) {
 
   private implicit val log: SelfAwareStructuredLogger[F] = Slf4jLogger.unsafeCreate[F]
 
-  private val address = new InetSocketAddress(ServerSocketConfig.hostname, ServerSocketConfig.port)
+  private val address = new InetSocketAddress(addressConfig.hostname, addressConfig.port)
 
   private def sockets: Stream[F, Socket[F]] =
     for {
@@ -57,8 +57,10 @@ object SocketServerStream {
 
   val ServerSocketConfig: TcpSocketConfig = pureconfig.loadConfigOrThrow[TcpSocketConfig]("machines.remote.tcp")
 
-  def apply[F[_]: Concurrent: ContextShift](implicit acg: AsynchronousChannelGroup): SocketServerStream[F] =
-    new SocketServerStream[F]()
+  def apply[F[_]: Concurrent: ContextShift](
+      address: Option[TcpSocketConfig] = None
+  )(implicit acg: AsynchronousChannelGroup): SocketServerStream[F] =
+    new SocketServerStream[F](address.getOrElse(ServerSocketConfig))
 }
 
 object SocketClientStream {

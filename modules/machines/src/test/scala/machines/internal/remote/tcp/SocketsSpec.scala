@@ -1,22 +1,13 @@
 package machines.internal.remote.tcp
 
-import java.nio.channels.AsynchronousChannelGroup
-
 import cats.effect.IO
 import fs2.Chunk
 import fs2.io.tcp.Socket
 import org.scalatest.BeforeAndAfterAll
 import fs2.Stream
-import machines.MachinesSpec
+import machines.NetMachinesSpec
 
-class SocketsSpec extends MachinesSpec with BeforeAndAfterAll {
-
-  implicit val acg: AsynchronousChannelGroup = AsyncChannelProvider.instance(8)
-
-  override def afterAll(): Unit = {
-    acg.shutdownNow()
-    super.afterAll()
-  }
+class SocketsSpec extends NetMachinesSpec with BeforeAndAfterAll {
 
   "Sockets" should {
 
