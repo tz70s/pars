@@ -6,7 +6,7 @@ import cats.effect.IO
 import org.openjdk.jmh.annotations._
 import fs2.Stream
 import machines.Channel
-import machines.internal.UnsafeFacade.{Event, Packet}
+import machines.internal.Protocol.{Event, Protocol}
 
 @State(Scope.Thread)
 @BenchmarkMode(Array(Mode.Throughput))
@@ -23,7 +23,7 @@ class ProtocolParserBench {
 
   val parser = new ProtocolParser[IO]
 
-  var packets: List[Packet] = _
+  var packets: List[Protocol] = _
 
   var buffer: Array[Byte] = _
 
@@ -35,18 +35,18 @@ class ProtocolParserBench {
 
     packets = packetStream.compile.toList
 
-    buffer = packetStream.through(parser.packetToBuffer).compile.toList.unsafeRunSync().toArray
+    buffer = packetStream.through(parser.encoder).compile.toList.unsafeRunSync().toArray
   }
 
   @Benchmark
   def packetToBufferParsing(): Unit = {
-    val buffer = Stream.emits(packets).through(parser.packetToBuffer)
+    val buffer = Stream.emits(packets).through(parser.encoder)
     buffer.compile.drain.unsafeRunSync()
   }
 
   @Benchmark
   def bufferToPacketParsing(): Unit = {
-    val packets = Stream.emits(buffer).through(parser.bufferToPacket)
+    val packets = Stream.emits(buffer).through(parser.decoder)
     packets.compile.drain.unsafeRunSync()
   }
 

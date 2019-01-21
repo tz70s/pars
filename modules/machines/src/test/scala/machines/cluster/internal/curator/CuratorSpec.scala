@@ -1,4 +1,4 @@
-package machines.internal.cluster.curator
+package machines.cluster.internal.curator
 
 import cats.effect.IO
 import org.apache.curator.test.TestingServer

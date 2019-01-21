@@ -2,23 +2,18 @@ package machines.internal.remote
 
 import cats.effect.Concurrent
 import fs2.{Chunk, Pipe, Pull, Stream}
+import machines.internal.Protocol.Protocol
 import machines.SerializationProvider
-import machines.internal.UnsafeFacade.Packet
-
-private[machines] object Protocol {
-  case class Header(tpe: Message)
-  case class Message(header: Header, value: AnyRef)
-}
 
 private[machines] class ProtocolParser[F[_]: Concurrent] {
 
   private val serializer = SerializationProvider.serializer
 
-  def bufferToPacket: Pipe[F, Byte, Packet] = {
-    def statefulPull(stream: Stream[F, Byte]): Pull[F, Packet, Unit] =
+  def decoder: Pipe[F, Byte, Protocol] = {
+    def statefulPull(stream: Stream[F, Byte]): Pull[F, Protocol, Unit] =
       stream.pull.uncons.flatMap {
         case Some((head, tail)) =>
-          serializer.deserialize[Packet](head.toArray) match {
+          serializer.deserialize[Protocol](head.toArray) match {
             case Right(message) => Pull.output(Chunk.singleton(message)) >> statefulPull(tail)
             case Left(cause) => Pull.raiseError(cause)
           }
@@ -30,7 +25,7 @@ private[machines] class ProtocolParser[F[_]: Concurrent] {
       statefulPull(source).stream
   }
 
-  def packetToBuffer: Pipe[F, Packet, Byte] = { packets =>
+  def encoder: Pipe[F, Protocol, Byte] = { packets =>
     val chunks = for {
       packet <- packets
       binary <- Stream.emit(serializer.serialize(packet))
@@ -40,9 +35,4 @@ private[machines] class ProtocolParser[F[_]: Concurrent] {
     } yield chunk
     chunks
   }
-}
-
-private[machines] object ProtocolParser {
-  sealed trait BatchState
-  case object FlushOut extends BatchState
 }

@@ -4,12 +4,11 @@ import cats.effect.IO
 import fs2.Stream
 import io.chrisdavenport.log4cats.slf4j.Slf4jLogger
 import io.chrisdavenport.log4cats.{Logger, SelfAwareStructuredLogger}
-import machines.internal.{ParEffectImpl, UnsafeFacade}
 
 class MachineSpec extends MachinesSpec {
 
   implicit val log: SelfAwareStructuredLogger[IO] = Slf4jLogger.unsafeCreate[IO]
-  implicit val mill: ParEffect[IO] = ParEffectImpl(UnsafeFacade())
+  implicit val parEffect: ParEffect[IO] = ParEffect.localAndOmitChannel()
 
   "Machine Factories" should {
 

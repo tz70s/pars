@@ -3,17 +3,17 @@ package machines
 import fs2.Stream
 
 /**
- * The ParEffect '''spawn''' a machine into stream.
+ * The ParEffect '''allocate''' a machine into stream.
  *
  * The polymorphic allocation interface for allocating tasks.
- * Similar to Execution Context, the assembler will be scoped via implicit to flexible **shifting** spawn instance.
+ * Similar to Execution Context, the assembler will be scoped via implicit to flexible **shifting** allocate instance.
  */
 trait ParEffect[F[_]] {
 
   /**
    * Spawn a machine with specified strategy, and materialized into Stream.
    *
-   * @param machine Machine class to spawn.
+   * @param machine Machine class to allocate.
    * @param strategy Strategy for distribution.
    * @return Materialized stream.
    */
@@ -22,15 +22,20 @@ trait ParEffect[F[_]] {
 
 object ParEffect {
 
+  def localAndOmitChannel[F[_]](): ParEffect[F] = new ParEffect[F] {
+    override def spawn[I, O](machine: Machine[F, I, O], strategy: Strategy): Stream[F, O] =
+      machine.evaluateToStream
+  }
+
   /**
-   * Convenience application to find the implicit spawn instance.
+   * Convenience application to find the implicit allocate instance.
    *
    * @example {{{
-   * // Resolution for spawn instance.
-   * val spawn = ParEffect[F]
+   * // Resolution for allocate instance.
+   * val allocate = ParEffect[F]
    *
    * // Operations.
-   * val eval = ParEffect[F].spawn(machine, strategy)
+   * val eval = ParEffect[F].allocate(machine, strategy)
    * }}}
    *
    * @return Implicit ParEffect instance.

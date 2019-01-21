@@ -21,7 +21,7 @@ final case class Channel[+T](id: String, strategy: ChannelOutputStrategy = Chann
   /**
    * Publish stream of value T into channel, the output strategy is specify by the [[ChannelOutputStrategy]].
    *
-   * Note that the implicit spawn binding should be taken in scope for channel resolution.
+   * Note that the implicit allocate binding should be taken in scope for channel resolution.
    *
    * @example {{{
    * val pubStream = Stream(1, 2, 3)
@@ -36,7 +36,7 @@ final case class Channel[+T](id: String, strategy: ChannelOutputStrategy = Chann
   /**
    * Subscribe stream of value T from channel, the output strategy is specify by the [[ChannelOutputStrategy]]
    *
-   * Note that the implicit spawn binding should be taken in scope for channel resolution.
+   * Note that the implicit allocate binding should be taken in scope for channel resolution.
    *
    * @example {{{
    * val subStream = Channel[Int]("IntStream").sub

@@ -3,33 +3,31 @@ package machines.internal.remote
 import java.nio.channels.AsynchronousChannelGroup
 
 import cats.effect.{Concurrent, ContextShift}
-import fs2.Stream
+import fs2.{Pipe, Stream}
 import fs2.concurrent.{Queue, SignallingRef}
 import fs2.io.tcp.Socket
 import io.chrisdavenport.log4cats.{Logger, SelfAwareStructuredLogger}
 import io.chrisdavenport.log4cats.slf4j.Slf4jLogger
-import machines.internal.UnsafeFacade
-import machines.internal.UnsafeFacade.Packet
+import machines.internal.Protocol.Protocol
 import machines.internal.remote.tcp.{SocketClientStream, SocketServerStream, TcpSocketConfig}
 
-private[machines] class ServerImpl[F[_]: Concurrent: ContextShift](private val facade: UnsafeFacade[F])(
+private[machines] class ServerImpl[F[_]: Concurrent: ContextShift](
     implicit val acg: AsynchronousChannelGroup
 ) {
   private val parser = new ProtocolParser[F]
 
   private implicit val log: SelfAwareStructuredLogger[F] = Slf4jLogger.unsafeCreate[F]
 
-  private def reactor(socket: Socket[F]): Stream[F, Unit] = {
-    val retValues = for {
-      packet <- socket.reads(NetService.SocketReadBufferSize).through(parser.bufferToPacket)
-      s <- facade.handlePacket(packet)
-      _ <- Stream.eval(Logger[F].info(s"Server got the packet $packet and evaluated the result as: $s"))
-    } yield s
+  private def reactor(logic: Pipe[F, Protocol, Protocol])(socket: Socket[F]): Stream[F, Unit] =
+    socket
+      .reads(NetService.SocketReadBufferSize)
+      .through(parser.decoder)
+      .through(logic)
+      .through(parser.encoder)
+      .to(socket.writes())
+      .onFinalize(socket.endOfOutput)
 
-    retValues.through(parser.packetToBuffer).to(socket.writes()).onFinalize(socket.endOfOutput)
-  }
-
-  def bindAndHandle: Stream[F, Unit] = SocketServerStream[F].handle(reactor)
+  def bindAndHandle(logic: Pipe[F, Protocol, Protocol]): Stream[F, Unit] = SocketServerStream[F].handle(reactor(logic))
 }
 
 private[machines] class ClientImpl[F[_]: Concurrent: ContextShift](implicit val acg: AsynchronousChannelGroup) {
@@ -38,23 +36,25 @@ private[machines] class ClientImpl[F[_]: Concurrent: ContextShift](implicit val 
 
   private implicit val log: SelfAwareStructuredLogger[F] = Slf4jLogger.unsafeCreate[F]
 
-  def writeN(rmt: TcpSocketConfig, source: Stream[F, Packet], signal: SignallingRef[F, Boolean]): Stream[F, Packet] = {
-    def cycle(queue: Queue[F, Packet], signal: SignallingRef[F, Boolean]): Stream[F, Unit] =
+  def writeN(rmt: TcpSocketConfig,
+             source: Stream[F, Protocol],
+             signal: SignallingRef[F, Boolean]): Stream[F, Protocol] = {
+    def cycle(queue: Queue[F, Protocol], signal: SignallingRef[F, Boolean]): Stream[F, Unit] =
       remote(rmt) { socket =>
-        val writes = source.through(parser.packetToBuffer).to(socket.writes()).onFinalize(socket.endOfOutput)
+        val writes = source.through(parser.encoder).to(socket.writes()).onFinalize(socket.endOfOutput)
 
         val reads = socket
           .reads(NetService.SocketReadBufferSize)
-          .through(parser.bufferToPacket)
+          .through(parser.decoder)
           .to(queue.enqueue)
 
         writes ++ reads
       }
 
     val stream = for {
-      q <- Stream.eval(Queue.bounded[F, Packet](10))
+      q <- Stream.eval(Queue.bounded[F, Protocol](10))
       packet <- q.dequeue concurrently cycle(q, signal)
-      _ <- Stream.eval(Logger[F].info(s"Client get the return packet $packet"))
+      _ <- Stream.eval(Logger[F].info(s"Client get the return command $packet"))
     } yield packet
 
     stream.interruptWhen(signal)
@@ -74,9 +74,11 @@ private[machines] class ClientImpl[F[_]: Concurrent: ContextShift](implicit val 
  * }}}
  */
 private[machines] class NetService[F[_]: Concurrent: ContextShift](implicit val acg: AsynchronousChannelGroup) {
-  def bindAndHandle(facade: UnsafeFacade[F]): Stream[F, Unit] = new ServerImpl[F](facade).bindAndHandle
+  def bindAndHandle(logic: Pipe[F, Protocol, Protocol]): Stream[F, Unit] = new ServerImpl[F].bindAndHandle(logic)
 
-  def writeN(rmt: TcpSocketConfig, source: Stream[F, Packet], signal: SignallingRef[F, Boolean]): Stream[F, Packet] =
+  def writeN(rmt: TcpSocketConfig,
+             source: Stream[F, Protocol],
+             signal: SignallingRef[F, Boolean]): Stream[F, Protocol] =
     new ClientImpl[F].writeN(rmt, source, signal)
 }
 

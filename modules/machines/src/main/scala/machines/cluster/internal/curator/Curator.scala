@@ -1,4 +1,4 @@
-package machines.internal.cluster.curator
+package machines.cluster.internal.curator
 
 import cats.effect.{Async, ContextShift, Sync}
 import org.apache.curator.framework.{CuratorFramework, CuratorFrameworkFactory}
