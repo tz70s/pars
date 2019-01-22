@@ -12,15 +12,15 @@ lazy val `example` = project
   .underModules
   .settings(shared)
   .settings(jvmForkSettings)
-  .dependsOn(`machines`)
+  .dependsOn(`pars`)
 
 lazy val `benchmark` = project
   .underModules
   .settings(shared)
   .enablePlugins(JmhPlugin)
-  .dependsOn(`machines`)
+  .dependsOn(`pars`)
 
-lazy val `machines` = project
+lazy val `pars` = project
   .underModules
   .settings(shared)
   .settings(libraryDependencies ++= librariesN)
@@ -28,6 +28,6 @@ lazy val `machines` = project
   .settings(customTestFilter)
   .settings(jvmForkSettings)
 
-lazy val `machines-root` = project
+lazy val `pars-root` = project
   .in(file("."))
-  .aggregate(`machines`, `benchmark`, `example`, `site`)
+  .aggregate(`pars`, `benchmark`, `example`, `site`)
