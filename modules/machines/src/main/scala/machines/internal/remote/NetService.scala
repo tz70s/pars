@@ -4,12 +4,13 @@ import java.nio.channels.AsynchronousChannelGroup
 
 import cats.effect.{Concurrent, ContextShift}
 import fs2.{Pipe, Stream}
-import fs2.concurrent.Queue
+import fs2.concurrent.{NoneTerminatedQueue, Queue}
 import fs2.io.tcp.Socket
 import io.chrisdavenport.log4cats.{Logger, SelfAwareStructuredLogger}
 import io.chrisdavenport.log4cats.slf4j.Slf4jLogger
 import machines.internal.Protocol.Protocol
 import machines.internal.remote.tcp.{SocketClientStream, SocketServerStream, TcpSocketConfig}
+import scala.concurrent.duration._
 
 private[machines] class ServerImpl[F[_]: Concurrent: ContextShift](
     implicit val acg: AsynchronousChannelGroup
@@ -41,20 +42,21 @@ private[machines] class ClientImpl[F[_]: Concurrent: ContextShift](implicit val 
   private implicit val log: SelfAwareStructuredLogger[F] = Slf4jLogger.unsafeCreate[F]
 
   def writeN(rmt: TcpSocketConfig, source: Stream[F, Protocol]): Stream[F, Protocol] = {
-    def cycle(queue: Queue[F, Protocol]): Stream[F, Unit] =
+    def cycle(queue: NoneTerminatedQueue[F, Protocol]): Stream[F, Unit] =
       remote(rmt) { socket =>
         val writes = source.through(parser.encoder).to(socket.writes()).onFinalize(socket.endOfOutput)
 
         val reads = socket
           .reads(NetService.SocketReadBufferSize)
           .through(parser.decoder)
+          .map(p => Some(p))
           .to(queue.enqueue)
 
-        writes ++ reads
+        writes ++ reads ++ Stream.eval(queue.enqueue1(None))
       }
 
     for {
-      q <- Stream.eval(Queue.bounded[F, Protocol](10))
+      q <- Stream.eval(Queue.boundedNoneTerminated[F, Protocol](100))
       packet <- q.dequeue concurrently cycle(q)
       _ <- Stream.eval(Logger[F].debug(s"Client get the return command $packet"))
     } yield packet
@@ -81,6 +83,15 @@ private[machines] class NetService[F[_]: Concurrent: ContextShift](implicit val 
 
   def writeN(rmt: TcpSocketConfig, source: Stream[F, Protocol]): Stream[F, Protocol] =
     new ClientImpl[F].writeN(rmt, source)
+
+  def backOffWriteN(rmt: TcpSocketConfig,
+                    source: Stream[F, Protocol],
+                    retry: Int = 3,
+                    sleep: FiniteDuration = 100.millis,
+                    factors: Int = 2): Stream[F, Protocol] =
+    writeN(rmt, source).handleErrorWith { throwable =>
+      if (retry > 0) backOffWriteN(rmt, source, retry - 1, sleep * factors) else Stream.raiseError(throwable)
+    }
 }
 
 private[machines] object NetService {

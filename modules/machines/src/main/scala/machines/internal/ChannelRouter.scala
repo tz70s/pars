@@ -3,6 +3,7 @@ package machines.internal
 import cats.effect.Sync
 import fs2.Stream
 import machines.internal.Protocol.{ChannelProtocol, Event, EventOk}
+import machines.internal.remote.tcp.TcpSocketConfig
 import machines.{Channel, Machine}
 
 /**
@@ -12,9 +13,9 @@ import machines.{Channel, Machine}
  *
  * However, the assembled stream should be cast back to normal type after evaluation at the call side or composition point.
  */
-private[machines] class ChannelF[F[_]: Sync](val repository: MachineRepository[F]) {
+private[machines] class ChannelRouter[F[_]: Sync](val repository: MachineRepository[F]) {
 
-  import ChannelF._
+  import ChannelRouter._
 
   type UnsafeMachine = Machine[F, _, _]
 
@@ -35,9 +36,11 @@ private[machines] class ChannelF[F[_]: Sync](val repository: MachineRepository[F
     } yield s
 }
 
-private[machines] object ChannelF {
+private[machines] object ChannelRouter {
 
-  def apply[F[_]: Sync](repository: MachineRepository[F]): ChannelF[F] = new ChannelF(repository)
+  case class ChannelRoutee(seq: Seq[TcpSocketConfig])
+
+  def apply[F[_]: Sync](repository: MachineRepository[F]): ChannelRouter[F] = new ChannelRouter(repository)
 
   type UnsafeChannel = Channel[_]
 }

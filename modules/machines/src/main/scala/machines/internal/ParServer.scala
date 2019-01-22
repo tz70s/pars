@@ -13,7 +13,7 @@ import machines.{Channel, FlyingMachine, Machine, Strategy}
 
 import scala.collection.concurrent.TrieMap
 
-private[machines] class ProtocolF[F[_]: Concurrent: ContextShift: Timer: RaiseThrowable](
+private[machines] class ParServer[F[_]: Concurrent: ContextShift: Timer: RaiseThrowable](
     coordinators: Seq[TcpSocketConfig]
 )(
     implicit acg: AsynchronousChannelGroup
@@ -21,12 +21,12 @@ private[machines] class ProtocolF[F[_]: Concurrent: ContextShift: Timer: RaiseTh
 
   private val repository = new MachineRepository[F]
   private val proxy = CoordinatorProxy(coordinators, repository)
-  private val channelF = ChannelF(repository)
+  private val router = ChannelRouter(repository)
 
   private def logic: Pipe[F, Protocol, Protocol] = { from =>
     from.flatMap {
       case c: CoordinatorToProxy => proxy.handle(c)
-      case event: ChannelProtocol => channelF.handle(event)
+      case event: ChannelProtocol => router.handle(event)
     }
   }
 
@@ -38,17 +38,17 @@ private[machines] class ProtocolF[F[_]: Concurrent: ContextShift: Timer: RaiseTh
   def bindAndHandle: Stream[F, Unit] = NetService[F].bindAndHandle(logic).concurrently(background)
 }
 
-object ProtocolF {
+object ParServer {
 
   def bindAndHandle[F[_]: Concurrent: ContextShift: Timer](
       coordinators: Seq[TcpSocketConfig]
   )(implicit acg: AsynchronousChannelGroup): Stream[F, Unit] =
-    new ProtocolF[F](coordinators).bindAndHandle
+    new ParServer[F](coordinators).bindAndHandle
 }
 
 private[machines] class MachineRepository[F[_]: Sync] {
 
-  import ChannelF._
+  import ChannelRouter._
 
   type UnsafeMachine = Machine[F, _, _]
 
@@ -82,4 +82,5 @@ object Protocol {
   // TODO should revisit this signature later.
   case class EventOk[T](value: T) extends ChannelProtocol
   case class EventErr(throwable: Throwable) extends ChannelProtocol
+
 }

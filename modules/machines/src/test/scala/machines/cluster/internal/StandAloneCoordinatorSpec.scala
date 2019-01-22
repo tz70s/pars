@@ -8,7 +8,7 @@ import fs2.Stream
 import io.chrisdavenport.log4cats.Logger
 import io.chrisdavenport.log4cats.slf4j.Slf4jLogger
 import machines.cluster.CoordinationProtocol._
-import machines.internal.ProtocolF
+import machines.internal.ParServer
 import machines.internal.remote.NetService
 import machines.internal.Protocol.Protocol
 
@@ -25,9 +25,7 @@ class StandAloneCoordinatorSpec extends NetMachinesSpec with Matchers with Machi
 
       def heartbeat: Stream[IO, Protocol] =
         NetService[IO]
-          .writeN(StandAloneCoordinatorAddress, Stream.emit(Ping(TcpSocketConfig("localhost", 5678))))
-          .handleErrorWith(_ => heartbeat)
-          .take(1)
+          .backOffWriteN(StandAloneCoordinatorAddress, Stream.emit(Ping(TcpSocketConfig("localhost", 5678))))
 
       val run = heartbeat.concurrently(coordinator)
 
@@ -39,9 +37,7 @@ class StandAloneCoordinatorSpec extends NetMachinesSpec with Matchers with Machi
 
       def request: Stream[IO, Protocol] =
         NetService[IO]
-          .writeN(StandAloneCoordinatorAddress, Stream.emit(AllocationRequest(TestMachine, Strategy(1))))
-          .handleErrorWith(_ => request)
-          .take(1)
+          .backOffWriteN(StandAloneCoordinatorAddress, Stream.emit(AllocationRequest(TestMachine, Strategy(1))))
 
       val run = request concurrently coordinator
       val err = run.compile.toList.unsafeRunSync().head
@@ -55,10 +51,8 @@ class StandAloneCoordinatorSpec extends NetMachinesSpec with Matchers with Machi
 
       def request: Stream[IO, Protocol] =
         NetService[IO]
-          .writeN(StandAloneCoordinatorAddress,
-                  Stream(Ping(TcpSocketConfig("localhost", 7856)), AllocationRequest(TestMachine, Strategy(1))))
-          .handleErrorWith(_ => request)
-          .take(2)
+          .backOffWriteN(StandAloneCoordinatorAddress,
+                         Stream(Ping(TcpSocketConfig("localhost", 7856)), AllocationRequest(TestMachine, Strategy(1))))
 
       val run = request concurrently coordinator
       val rets = run.compile.toList.unsafeRunSync()
@@ -70,7 +64,7 @@ class StandAloneCoordinatorSpec extends NetMachinesSpec with Matchers with Machi
     "allocate and accept a successful response" in {
       val coordinator = StandAloneCoordinator[IO].bindAndHandle(StandAloneCoordinatorAddress)
 
-      val protocolF = new ProtocolF[IO](Seq(StandAloneCoordinatorAddress))
+      val protocolF = new ParServer[IO](Seq(StandAloneCoordinatorAddress))
 
       val background = Stream(protocolF.bindAndHandle, coordinator).parJoin(2)
       val run = protocolF.allocate(TestMachine, Strategy(1)) concurrently background

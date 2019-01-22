@@ -93,11 +93,7 @@ class StandAloneCoordinatorProtocolF[F[_]: Concurrent: ContextShift: RaiseThrowa
                                 machine: FlyingMachine[F, _, _]): Stream[F, Protocol] = {
     // Currently ignore the worker state.
     val address = worker._1
-    for {
-      result <- NetService[F]
-        .writeN(address, Stream.emit(AllocationCommand(machine)))
-        .take(1)
-    } yield result
+    NetService[F].writeN(address, Stream.emit(AllocationCommand(machine)))
   }
 
   private def randomSelectWorkerEndPoint: (TcpSocketConfig, WorkerState) = synchronized {

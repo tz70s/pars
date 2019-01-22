@@ -41,7 +41,6 @@ private[machines] class CoordinatorProxy[F[_]: RaiseThrowable: Concurrent: Conte
       NetService[F]
         .writeN(selectCoordinator(coordinators), Stream.emit(AllocationRequest(machine, strategy)))
         .handleError(t => RequestErr(t))
-        .take(1)
         .flatMap {
           case RequestErr(t) =>
             if (retries > 0)
@@ -110,10 +109,7 @@ private[cluster] class ConnectionStateManagement[F[_]: Concurrent: ContextShift:
 
     val pong = for {
       _ <- Stream.eval(ContextShift[F].shift *> Timer[F].sleep(1500.millis))
-      pong <- NetService[F]
-        .writeN(coordinator, Stream.emit(Ping(NetService.address)))
-        .filter(_ == Pong)
-        .take(1)
+      pong <- NetService[F].writeN(coordinator, Stream.emit(Ping(NetService.address)))
     } yield pong
 
     pong.flatMap {
