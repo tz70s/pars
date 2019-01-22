@@ -4,7 +4,7 @@ import java.nio.channels.AsynchronousChannelGroup
 
 import cats.effect.{Concurrent, ContextShift, Sync, Timer}
 import fs2.{RaiseThrowable, Stream}
-import machines.internal.MachineRepository
+import machines.internal.ChannelRoutingTable
 import machines.{FlyingMachine, Machine, Strategy}
 import machines.internal.remote.tcp.TcpSocketConfig
 
@@ -21,13 +21,13 @@ import machines.internal.Protocol.Protocol
 
 private[machines] class CoordinatorProxy[F[_]: RaiseThrowable: Concurrent: ContextShift: Timer](
     val coordinators: Seq[TcpSocketConfig],
-    private val repository: MachineRepository[F]
+    private val repository: ChannelRoutingTable[F]
 )(implicit acg: AsynchronousChannelGroup) {
 
   import CoordinatorProxy._
   import CoordinationProtocol._
 
-  type UnsafeMachine = Machine[F, _, _]
+  type UnsafeFlyingMachine = FlyingMachine[F, _, _]
 
   private implicit val log: Logger[F] = Slf4jLogger.unsafeCreate[F]
 
@@ -66,13 +66,13 @@ private[machines] class CoordinatorProxy[F[_]: RaiseThrowable: Concurrent: Conte
 
   private def handleCommand(command: Command): Stream[F, ProxyToCoordinator] =
     command match {
-      case AllocationCommand(machine) =>
-        Stream
-          .eval(repository.allocate(machine.channel, machine.asInstanceOf[UnsafeMachine]))
+      case AllocationCommand(machine, workers) =>
+        repository
+          .allocate(machine.asInstanceOf[UnsafeFlyingMachine], workers)
           .map(_ => CommandOk(machine.channel))
 
       case RemovalCommand(channel) =>
-        Stream.eval(repository.remove(channel)).map(_ => CommandOk(channel))
+        repository.remove(channel).map(_ => CommandOk(channel))
     }
 }
 
@@ -80,7 +80,7 @@ private[machines] object CoordinatorProxy {
 
   def apply[F[_]: RaiseThrowable: Concurrent: ContextShift: Timer](
       coordinators: Seq[TcpSocketConfig],
-      repository: MachineRepository[F]
+      repository: ChannelRoutingTable[F]
   )(implicit acg: AsynchronousChannelGroup): CoordinatorProxy[F] =
     new CoordinatorProxy(coordinators, repository)
 

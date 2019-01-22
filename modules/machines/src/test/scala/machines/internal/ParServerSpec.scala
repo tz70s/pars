@@ -20,11 +20,11 @@ class ParServerSpec extends NetMachinesSpec with Matchers with BeforeAndAfterAll
 
       val peer = NetService.address
 
-      val commands = Stream(AllocationCommand(TestMachine), Event(TestChannel, Stream.emits(source)))
+      val commands = Stream(AllocationCommand(TestMachine, Seq(peer)), Event(TestChannel, Stream.emits(source)))
 
-      val packets = NetService[IO].writeN(peer, commands)
+      val writes = NetService[IO].backOffWriteN(peer, commands)
 
-      val result = (packets concurrently parServer).compile.toList.unsafeRunSync()
+      val result = (writes concurrently parServer).compile.toList.unsafeRunSync()
 
       result shouldBe List(CommandOk(TestChannel), EventOk(2), EventOk(3), EventOk(4))
     }

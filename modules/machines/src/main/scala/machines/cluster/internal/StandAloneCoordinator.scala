@@ -81,8 +81,9 @@ class StandAloneCoordinatorProtocolF[F[_]: Concurrent: ContextShift: RaiseThrowa
   private def allocateToWorkers(replicas: Int, machine: FlyingMachine[F, _, _], retry: Int = 3): Stream[F, Protocol] = {
     // FIXME - current implementation, the number of allocated will be less than request replicas.
     val workers = (0 to replicas).map(_ => randomSelectWorkerEndPoint).toSet
+    val command = AllocationCommand(machine, workers.toSeq.map(_._1))
 
-    Stream(Stream.emits(workers.toSeq).flatMap(worker => commandAllocation(worker, machine)))
+    Stream(Stream.emits(workers.toSeq).flatMap(worker => commandAllocation(worker, command)))
       .parJoin(workers.size)
       .handleErrorWith { t =>
         if (retry > 0) allocateToWorkers(replicas, machine, retry - 1) else Stream.raiseError(t)
@@ -90,10 +91,10 @@ class StandAloneCoordinatorProtocolF[F[_]: Concurrent: ContextShift: RaiseThrowa
   }
 
   private def commandAllocation(worker: (TcpSocketConfig, WorkerState),
-                                machine: FlyingMachine[F, _, _]): Stream[F, Protocol] = {
+                                command: AllocationCommand[F]): Stream[F, Protocol] = {
     // Currently ignore the worker state.
     val address = worker._1
-    NetService[F].writeN(address, Stream.emit(AllocationCommand(machine)))
+    NetService[F].writeN(address, Stream.emit(command))
   }
 
   private def randomSelectWorkerEndPoint: (TcpSocketConfig, WorkerState) = synchronized {

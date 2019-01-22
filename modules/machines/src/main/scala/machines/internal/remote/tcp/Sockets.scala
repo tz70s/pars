@@ -19,7 +19,7 @@ case class TcpSocketConfig(hostname: String, port: Int)
  * Therefore, both server and client should be transparent to user.
  *
  * @example {{{
- * val stream = SocketServerStream[IO].handle { socket => socket.reads(1024).through(extractor) }
+ * val stream = SocketServerStream[IO].receive { socket => socket.reads(1024).through(extractor) }
  * }}}
  */
 private[remote] class SocketServerStream[F[_]: Concurrent: ContextShift](addressConfig: TcpSocketConfig)(

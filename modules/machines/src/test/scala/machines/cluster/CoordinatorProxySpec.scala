@@ -6,8 +6,9 @@ import io.chrisdavenport.log4cats.Logger
 import io.chrisdavenport.log4cats.slf4j.Slf4jLogger
 import machines.cluster.CoordinationProtocol.{AllocationCommand, CommandOk, RemovalCommand}
 import machines.cluster.internal.StandAloneCoordinator
-import machines.internal.MachineRepository
+import machines.internal.{ChannelRouteEntry, ChannelRoutingTable, MachineNotFoundException}
 import machines._
+import machines.internal.remote.tcp.TcpSocketConfig
 import org.scalatest.Matchers
 
 import scala.concurrent.duration._
@@ -18,39 +19,40 @@ class CoordinatorProxySpec extends NetMachinesSpec with Matchers with MachinesTe
 
   "CoordinatorProxy and Machine Repository" should {
 
-    "work with TestMachine creation locally based on coordinator protocol" in {
+    "work with machine creation locally based on coordinator protocol" in {
 
-      val repository = new MachineRepository[IO]
+      val repository = new ChannelRoutingTable[IO]
 
       val proxy = CoordinatorProxy[IO](Seq.empty, repository)
 
+      val fakeWorkers = Seq(TcpSocketConfig("localhost", 1234))
+
       val result = for {
-        response <- proxy.handle(AllocationCommand(TestMachine))
-        lookUp <- Stream.eval(repository.lookUp(TestChannel))
+        response <- proxy.handle(AllocationCommand(TestMachine, fakeWorkers))
+        lookUp <- repository.lookUp(TestChannel)
       } yield (response, lookUp)
 
       val (res, lookUp) = result.compile.toList.unsafeRunSync().head
 
       res shouldBe CommandOk(TestChannel)
-      lookUp shouldBe Some(TestMachine)
+      lookUp shouldBe ChannelRouteEntry(TestMachine, fakeWorkers)
     }
 
-    "work with TestMachine deletion locally based on coordinator protocol" in {
-      val repository = new MachineRepository[IO]
+    "work with machine deletion locally based on coordinator protocol" in {
+      val repository = new ChannelRoutingTable[IO]
 
       val proxy = CoordinatorProxy[IO](Seq.empty, repository)
 
+      val fakeWorkers = Seq(TcpSocketConfig("localhost", 1234))
+
       val result = for {
-        _ <- proxy.handle(AllocationCommand(TestMachine))
-        exist <- Stream.eval(repository.lookUp(TestChannel))
+        _ <- proxy.handle(AllocationCommand(TestMachine, fakeWorkers))
+        _ <- repository.lookUp(TestChannel)
         _ <- proxy.handle(RemovalCommand(TestChannel))
-        notExist <- Stream.eval(repository.lookUp(TestChannel))
-      } yield (exist, notExist)
+        notExist <- repository.lookUp(TestChannel)
+      } yield notExist
 
-      val (exist, notExist) = result.compile.toList.unsafeRunSync().head
-
-      exist shouldBe Some(TestMachine)
-      notExist shouldBe None
+      a[MachineNotFoundException] should be thrownBy result.compile.toList.unsafeRunSync().head
     }
   }
 

@@ -2,29 +2,32 @@ package machines
 
 import cats.effect.IO
 import fs2.Stream
-import fs2.concurrent.Queue
+import machines.cluster.internal.StandAloneCoordinator
+import machines.internal.ParServer
 
-class ChannelSpec extends MachinesSpec {
+import cats.implicits._
 
-  "Channel" should {}
+class ChannelSpec extends NetMachinesSpec with MachinesTestDoubles {
 
-  "ChannelInternalQueue" should {
+  "Channel" should {
 
-    "enqueue and dequeue by concurrently enqueue in background with none signaling" in {
-      val expect = List(1, 2, 3)
-      val queue = Queue.noneTerminated[IO, Int]
+    "work with pub method" in {
+      val coordinator = StandAloneCoordinator[IO].bindAndHandle(StandAloneCoordinatorAddress)
 
-      // NOTE that the evaluation of queue should be careful on blocking behavior.
-      // Or it will be deadlocked or blocked into never end.
-      // This is a sample terminated queue.
-      // Or see example: https://fs2.io/concurrency-primitives.html
-      val result = for {
-        q <- Stream.eval(queue)
-        s <- q.dequeue concurrently q.enqueue(Stream.emits(expect.map(Some(_))) ++ Stream.emit(None))
-      } yield s
+      val parServer = new ParServer[IO](Seq(StandAloneCoordinatorAddress))
 
-      result.compile.toList.unsafeRunSync() shouldBe expect
+      val background = Stream(parServer.bindAndHandle, coordinator).parJoin(2)
+      val run = parServer.allocate(TestMachine, Strategy(1)) concurrently background
+
+      val source = Stream(1, 2, 3, 4, 5)
+
+      implicit val parEffect = new ParEffect[IO] {
+        override val server: ParServer[IO] = parServer
+      }
+
+      val pub = TestChannel.pub[IO, Int](source)
+
+      (run *> pub).compile.drain.unsafeRunSync()
     }
   }
-
 }

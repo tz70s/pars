@@ -1,6 +1,11 @@
 package machines
 
+import java.nio.channels.AsynchronousChannelGroup
+
+import cats.effect.{Concurrent, ContextShift, Timer}
 import fs2.Stream
+import machines.internal.ParServer
+import machines.internal.remote.tcp.TcpSocketConfig
 
 /**
  * The ParEffect '''allocate''' a machine into stream.
@@ -10,22 +15,24 @@ import fs2.Stream
  */
 trait ParEffect[F[_]] {
 
-  /**
-   * Spawn a machine with specified strategy, and materialized into Stream.
-   *
-   * @param machine Machine class to allocate.
-   * @param strategy Strategy for distribution.
-   * @return Materialized stream.
-   */
-  def spawn[I, O](machine: Machine[F, I, O], strategy: Strategy): Stream[F, O]
+  val server: ParServer[F]
 }
 
 object ParEffect {
 
-  def localAndOmitChannel[F[_]](): ParEffect[F] = new ParEffect[F] {
-    override def spawn[I, O](machine: Machine[F, I, O], strategy: Strategy): Stream[F, O] =
-      machine.evaluateToStream
-  }
+  def bindCoordinators[F[_]: Concurrent: ContextShift: Timer](
+      coordinators: Seq[TcpSocketConfig]
+  )(implicit acg: AsynchronousChannelGroup): ParEffect[F] =
+    new ParEffect[F] {
+      override val server: ParServer[F] = new ParServer[F](coordinators)
+    }
+
+  def localAndOmitCoordinator[F[_]: Concurrent: ContextShift: Timer](
+      implicit acg: AsynchronousChannelGroup
+  ): ParEffect[F] =
+    new ParEffect[F] {
+      override val server: ParServer[F] = null
+    }
 
   /**
    * Convenience application to find the implicit allocate instance.

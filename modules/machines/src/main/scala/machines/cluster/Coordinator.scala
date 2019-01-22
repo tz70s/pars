@@ -73,7 +73,7 @@ object CoordinationProtocol {
    *
    * @param channel Channel reference for tracking.
    */
-  case class RequestOk[F[_]](channel: Channel[_]) extends CoordinatorToProxy
+  case class RequestOk[F[_]](channel: Channel[_], workers: Seq[TcpSocketConfig]) extends CoordinatorToProxy
 
   /**
    * Indicate request allocation failure.
@@ -89,7 +89,7 @@ object CoordinationProtocol {
    *
    * @param machine Allocated [[machines.Machine]]
    */
-  case class AllocationCommand[F[_]](machine: FlyingMachine[F, _, _]) extends Command
+  case class AllocationCommand[F[_]](machine: FlyingMachine[F, _, _], workers: Seq[TcpSocketConfig]) extends Command
 
   /**
    * Command worker node (self) to remove machine instance.

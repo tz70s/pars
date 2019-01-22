@@ -31,7 +31,8 @@ final case class Channel[+T](id: String, strategy: ChannelOutputStrategy = Chann
    * @param source Source stream to publish.
    * @return Return the publish evaluation result.
    */
-  def pub[F[_]: ParEffect, U >: T](source: Stream[F, U]): Stream[F, Unit] = ???
+  def pub[F[_], U >: T](source: Stream[F, U])(implicit parEffect: ParEffect[F]) =
+    ParEffect[F].server.send(this, source)
 
   /**
    * Subscribe stream of value T from channel, the output strategy is specify by the [[ChannelOutputStrategy]]

@@ -24,9 +24,9 @@ trait NetMachinesSpec extends MachinesSpec with BeforeAndAfterAll {
   }
 }
 
-trait MachinesTestDoubles {
+trait MachinesTestDoubles { self: NetMachinesSpec =>
 
-  implicit val parEffect: ParEffect[IO] = ParEffect.localAndOmitChannel()
+  implicit val parEffect: ParEffect[IO] = ParEffect.localAndOmitCoordinator
 
   val StandAloneCoordinatorAddress = TcpSocketConfig("localhost", 9898)
 

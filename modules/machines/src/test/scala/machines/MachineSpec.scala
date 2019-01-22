@@ -5,10 +5,9 @@ import fs2.Stream
 import io.chrisdavenport.log4cats.slf4j.Slf4jLogger
 import io.chrisdavenport.log4cats.{Logger, SelfAwareStructuredLogger}
 
-class MachineSpec extends MachinesSpec {
+class MachineSpec extends NetMachinesSpec with MachinesTestDoubles {
 
   implicit val log: SelfAwareStructuredLogger[IO] = Slf4jLogger.unsafeCreate[IO]
-  implicit val parEffect: ParEffect[IO] = ParEffect.localAndOmitChannel()
 
   "Machine Factories" should {
 
