@@ -2,33 +2,28 @@ package pars
 
 import cats.Monad
 import fs2.Stream
-import cats.implicits._
 
 package object dsl {
 
-  type ParsS[F[_], A] = Pars[F, Unit, A]
+  implicit class StreamToParsM[F[_], +Out](val stream: Stream[F, Out]) {
+    def pars(implicit pe: ParEffect[F]) = Pars(stream.covary[F])
+  }
 
   // Instances for Pars
 
-  implicit def parsMonadInstance[F[_]](implicit pe: ParEffect[F]) = new Monad[Pars[F, Unit, ?]] {
+  implicit def parsMonadInstance[F[_]](implicit pe: ParEffect[F]) = new Monad[ParsM[F, ?]] {
 
-    override def pure[A](x: A): Pars[F, Unit, A] = Pars.emit(x)
+    override def pure[A](x: A): ParsM[F, A] = Pars.emit(x)
 
-    // TODO: correctly implement this.
-    override def flatMap[A, B](fa: Pars[F, Unit, A])(f: A => Pars[F, Unit, B]): Pars[F, Unit, B] = {
+    override def flatMap[A, B](fa: ParsM[F, A])(f: A => ParsM[F, B]): ParsM[F, B] = {
       // Implicitly generate channel instance.
-      val channel = Channel[A]("SystemGenerated")
+      val channel = Channel[A](s"FlatMap${fa.channel.id}ImplicitChannel")
 
-      // Allocation and inject fa workload into channel
-      val source = pe.server.allocate(fa, fa.strategy) *> channel.pub[F, A](fa.evaluateToStream)
+      val source = channel.pub(fa.evaluateToStream)
 
-      val inter = Pars.concat(channel) { from: Stream[F, A] =>
-        from.map(f).map(_.evaluateToStream).flatMap(s => s)
-      }
-
-      inter.asInstanceOf[Pars[F, Unit, B]]
+      Pars(fa.evaluateToStream.map(f).map(_.evaluateToStream).flatMap(s => s))
     }
 
-    override def tailRecM[A, B](a: A)(f: A => Pars[F, Unit, Either[A, B]]): Pars[F, Unit, B] = ???
+    override def tailRecM[A, B](a: A)(f: A => ParsM[F, Either[A, B]]): ParsM[F, B] = ???
   }
 }

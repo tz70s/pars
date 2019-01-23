@@ -21,8 +21,8 @@ private[pars] class ParServer[F[_]: Concurrent: ContextShift: Timer: RaiseThrowa
   private val proxy = CoordinatorProxy(coordinators, repository)
   private val router = ChannelRouter(repository)
 
-  def allocate[I, O](pars: Pars[F, I, O], strategy: Strategy): Stream[F, Protocol] =
-    proxy.allocate(pars, strategy)
+  def spawn[I, O](pars: Pars[F, I, O]): Stream[F, Channel[I]] =
+    proxy.spawn(pars)
 
   def send[T, I](to: Channel[T], event: Stream[F, I]): Stream[F, Unit] = router.send(Event(to, event))
 

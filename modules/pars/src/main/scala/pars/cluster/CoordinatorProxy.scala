@@ -5,7 +5,7 @@ import java.nio.channels.AsynchronousChannelGroup
 import cats.effect.{Concurrent, ContextShift, Sync, Timer}
 import fs2.{RaiseThrowable, Stream}
 import pars.internal.{ChannelRoutingTable, UnsafePars}
-import pars.{Pars, Strategy}
+import pars.{Channel, Pars}
 import pars.internal.remote.tcp.TcpSocketConfig
 
 import scala.concurrent.duration._
@@ -17,8 +17,6 @@ import io.chrisdavenport.log4cats.slf4j.Slf4jLogger
 import pars.cluster.ConnectionStateManagement.{Connect, Disconnect}
 import pars.cluster.CoordinationProtocol.{Ping, Pong}
 import pars.cluster.CoordinatorProxy.selectCoordinator
-import pars.internal.Protocol.Protocol
-
 import pars.internal._
 
 private[pars] class CoordinatorProxy[F[_]: RaiseThrowable: Concurrent: ContextShift: Timer](
@@ -35,11 +33,11 @@ private[pars] class CoordinatorProxy[F[_]: RaiseThrowable: Concurrent: ContextSh
 
   def bind: Stream[F, Unit] = connectionStateManagement.healthCheck()
 
-  def allocate[I, O](pars: Pars[F, I, O], strategy: Strategy): Stream[F, Protocol] = {
+  def spawn[I, O](pars: Pars[F, I, O]): Stream[F, Channel[I]] = {
 
-    def retry(retries: Int = 3, backOff: FiniteDuration = 100.millis): Stream[F, Protocol] =
+    def retry(retries: Int = 3, backOff: FiniteDuration = 100.millis): Stream[F, Channel[I]] =
       NetService[F]
-        .writeN(selectCoordinator(coordinators), Stream.emit(AllocationRequest(pars.toUnsafe, strategy)))
+        .writeN(selectCoordinator(coordinators), Stream.emit(AllocationRequest(pars.toUnsafe)))
         .handleError(t => RequestErr(t))
         .flatMap {
           case RequestErr(t) =>
@@ -49,7 +47,7 @@ private[pars] class CoordinatorProxy[F[_]: RaiseThrowable: Concurrent: ContextSh
                 backOff * 2
               )
             else Stream.raiseError(t)
-          case s: Protocol => Stream.emit(s)
+          case RequestOk(c, _) => Stream.emit(c.asInstanceOf[Channel[I]])
         }
 
     connectionStateManagement.current match {

@@ -5,19 +5,42 @@ import java.nio.channels.AsynchronousChannelGroup
 import cats.effect.{Concurrent, ContextShift, Timer}
 import pars.internal.ParServer
 import pars.internal.remote.tcp.TcpSocketConfig
+import fs2.{RaiseThrowable, Stream}
+
+import scala.collection.concurrent.TrieMap
 
 /**
  * The ParEffect '''distributed''' a pars into stream.
  *
  * The polymorphic allocation interface for allocating tasks.
- * Similar to Execution Context, the assembler will be scoped via implicit to flexible **shifting** allocate pars.
+ * Similar to Execution Context, the assembler will be scoped via implicit to flexible **shifting** spawn pars.
  */
-trait ParEffect[F[_]] {
+trait ParEffect[F[_]] extends Serializable {
 
-  val server: ParServer[F]
+  @transient private[pars] val server: ParServer[F]
+
+  val coordinators: Seq[TcpSocketConfig]
+
+  def spawn[I, O](pars: Pars[F, I, O]): Stream[F, Channel[I]] = server.spawn(pars)
+
+  def send[I](channel: Channel[I], events: Stream[F, I]): Stream[F, Unit] = server.send(channel, events)
 }
 
-class ParEffectOp[F[_]: Concurrent: ContextShift: Timer] private[pars] (implicit acg: AsynchronousChannelGroup) {
+private[pars] object ParEffectOp {
+
+  private trait Phantom[T]
+
+  private val pool = TrieMap[Seq[TcpSocketConfig], ParEffect[Phantom]]()
+
+  def findExisted[F[_]](addresses: Seq[TcpSocketConfig]): Stream[F, ParEffect[F]] =
+    Stream.emit(pool(addresses).asInstanceOf[ParEffect[F]])
+
+  def record[F[_]](pe: ParEffect[F]): Unit = pool += (pe.coordinators -> pe.asInstanceOf[ParEffect[Phantom]])
+}
+
+class ParEffectOp[F[_]: Concurrent: ContextShift: Timer: RaiseThrowable] private[pars] (
+    implicit acg: AsynchronousChannelGroup
+) {
 
   /**
    * Create a ParEffect instance with binding addresses of coordinators.
@@ -26,13 +49,30 @@ class ParEffectOp[F[_]: Concurrent: ContextShift: Timer] private[pars] (implicit
    * implicit val pe = ParEffect[IO].bindCoordinators(Seq(someAddresses))
    * }}}
    *
-   * @param coordinators Address of coordinators.
+   * @param addresses Address of coordinators.
    * @return ParEffect instance.
    */
-  def bindCoordinators(coordinators: Seq[TcpSocketConfig]): ParEffect[F] =
-    new ParEffect[F] {
-      override val server: ParServer[F] = new ParServer[F](coordinators)
+  def bindCoordinators(addresses: Seq[TcpSocketConfig]): ParEffect[F] = {
+    val pe = new ParEffect[F] {
+      override val coordinators: Seq[TcpSocketConfig] = addresses
+
+      @transient override val server: ParServer[F] = new ParServer[F](coordinators)
     }
+    ParEffectOp.record(pe)
+    pe
+  }
+
+  /**
+   * Create a ParEffect instance with binding address of coordinator.
+   *
+   * @example {{{
+   * implicit val pe = ParEffect[IO].bindCoordinator(someAddress)
+   * }}}
+   *
+   * @param address Address of coordinator.
+   * @return ParEffect instance.
+   */
+  def bindCoordinator(address: TcpSocketConfig): ParEffect[F] = bindCoordinators(Seq(address))
 
   /**
    * Omit coordinator, use for phantom par effect place holder.
@@ -41,7 +81,8 @@ class ParEffectOp[F[_]: Concurrent: ContextShift: Timer] private[pars] (implicit
    */
   def localAndOmitCoordinator: ParEffect[F] =
     new ParEffect[F] {
-      override val server: ParServer[F] = null
+      override val coordinators: Seq[TcpSocketConfig] = Seq.empty
+      @transient override val server: ParServer[F] = null
     }
 
 }
@@ -49,11 +90,11 @@ class ParEffectOp[F[_]: Concurrent: ContextShift: Timer] private[pars] (implicit
 object ParEffect {
 
   /**
-   * Convenience application to find the implicit allocate pars.
+   * Convenience application to find the implicit spawn pars.
    *
    * @example {{{
-   * // Resolution for allocate pars.
-   * val allocate = ParEffect[F]
+   * // Resolution for spawn pars.
+   * val spawn = ParEffect[F]
    *
    * // Operations.
    * val eval = ParEffect[F].loadAndOmitCoordinator
@@ -61,8 +102,11 @@ object ParEffect {
    *
    * @return Implicit ParEffect instance.
    */
-  def apply[F[_]: Concurrent: ContextShift: Timer](implicit acg: AsynchronousChannelGroup): ParEffectOp[F] =
+  def apply[F[_]: Concurrent: ContextShift: Timer: RaiseThrowable](
+      implicit acg: AsynchronousChannelGroup
+  ): ParEffectOp[F] =
     new ParEffectOp[F]()
+
 }
 
 /**

@@ -1,6 +1,6 @@
 package pars.cluster
 
-import pars.{Channel, Strategy}
+import pars.Channel
 import pars.internal.{Protocol, UnsafeChannel, UnsafePars}
 import pars.internal.remote.tcp.TcpSocketConfig
 
@@ -43,7 +43,7 @@ object CoordinationProtocol {
    * Control plane protocol.
    *
    * 1. Stage requests to coordinator for pars allocation.
-   * 2. Coordinator command worker node to allocate pars.
+   * 2. Coordinator command worker node to spawn pars.
    */
   sealed trait CoordinationProtocol extends Protocol
 
@@ -63,9 +63,8 @@ object CoordinationProtocol {
    * Request allocation to coordinator.
    *
    * @param pars Allocated pars.
-   * @param strategy Allocation strategy.
    */
-  case class AllocationRequest[F[_]](pars: UnsafePars[F], strategy: Strategy) extends ProxyToCoordinator
+  case class AllocationRequest[F[_]](pars: UnsafePars[F]) extends ProxyToCoordinator
 
   /**
    * Indicate request allocation success.
@@ -84,7 +83,7 @@ object CoordinationProtocol {
   sealed trait Command extends CoordinatorToProxy
 
   /**
-   * Command worker node (self) to allocate pars instance.
+   * Command worker node (self) to spawn pars instance.
    *
    * @param pars Allocated pars.
    */

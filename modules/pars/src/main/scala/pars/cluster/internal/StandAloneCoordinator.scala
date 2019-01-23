@@ -24,10 +24,10 @@ class StandAloneCoordinator[F[_]: Concurrent: ContextShift: Timer](
     implicit val acg: AsynchronousChannelGroup
 ) extends Coordinator {
 
-  private val protocolF = new StandAloneCoordinatorProtocolF[F]
+  private val server = new StandAloneCoordinatorParServer[F]
 
   def bindAndHandle(address: TcpSocketConfig): Stream[F, Unit] =
-    NetService[F].bindAndHandle(address, protocolF.logic)
+    NetService[F].bindAndHandle(address, server.logic)
 }
 
 object StandAloneCoordinator {
@@ -39,7 +39,7 @@ case class ParsExtension[F[_]](machine: UnsafePars[F], records: Set[TcpSocketCon
 
 case class WorkerState(lastLive: Long)
 
-class StandAloneCoordinatorProtocolF[F[_]: Concurrent: ContextShift: RaiseThrowable: Timer](
+class StandAloneCoordinatorParServer[F[_]: Concurrent: ContextShift: RaiseThrowable: Timer](
     implicit acg: AsynchronousChannelGroup
 ) {
 
@@ -59,39 +59,50 @@ class StandAloneCoordinatorProtocolF[F[_]: Concurrent: ContextShift: RaiseThrowa
           pong <- Stream.emit(Pong)
         } yield pong
 
-      case AllocationRequest(pars, strategy) =>
+      case AllocationRequest(pars) =>
         if (workers.isEmpty)
           Stream.emit(
             RequestErr(NoAvailableWorker(s"Coordinator can't find available worker, current workers: $workers"))
           )
         else {
+          val strategy = pars.strategy
           val replicas = if (strategy.replicas > workers.size) workers.size else strategy.replicas
-          allocateToWorkers(replicas, pars.asInstanceOf[UnsafePars[F]]).handleErrorWith { t =>
-            Stream.eval(Logger[F].error(s"Allocation error, cause : $t")) *> Stream.emit(RequestErr(t))
-          }
+          allocateToWorkers(replicas, pars.asInstanceOf[UnsafePars[F]])
+            .map(l => RequestOk(pars.channel, l))
+            .handleErrorWith { t =>
+              Stream.eval(Logger[F].error(s"Allocation error, cause : $t")) *> Stream.emit(RequestErr(t))
+            }
         }
     }
 
     stream.concurrently(checkWorkerOutliveOrNot())
   }
 
-  private def allocateToWorkers(replicas: Int, pars: UnsafePars[F], retry: Int = 3): Stream[F, Protocol] = {
+  private def allocateToWorkers(replicas: Int,
+                                pars: UnsafePars[F],
+                                retry: Int = 3): Stream[F, List[TcpSocketConfig]] = {
     // FIXME - current implementation, the number of allocated will be less than request replicas.
     val workers = (0 to replicas).map(_ => randomSelectWorkerEndPoint).toSet
     val command = AllocationCommand(pars, workers.toSeq.map(_._1))
 
     Stream(Stream.emits(workers.toSeq).flatMap(worker => commandAllocation(worker, command)))
       .parJoin(workers.size)
+      .fold(List[TcpSocketConfig]())((s, c) => c._1 :: s)
       .handleErrorWith { t =>
         if (retry > 0) allocateToWorkers(replicas, pars, retry - 1) else Stream.raiseError(t)
       }
   }
 
   private def commandAllocation(worker: (TcpSocketConfig, WorkerState),
-                                command: AllocationCommand[F]): Stream[F, Protocol] = {
+                                command: AllocationCommand[F]): Stream[F, (TcpSocketConfig, WorkerState)] = {
     // Currently ignore the worker state.
     val address = worker._1
-    NetService[F].writeN(address, Stream.emit(command))
+    NetService[F].writeN(address, Stream.emit(command)).flatMap {
+      case CommandOk(c) =>
+        if (command.pars.channel == c) Stream.emit(worker)
+        else Stream.raiseError(new Exception("Unexpected channel return while allocating."))
+      case CommandErr(t) => Stream.raiseError(t)
+    }
   }
 
   private def randomSelectWorkerEndPoint: (TcpSocketConfig, WorkerState) = synchronized {

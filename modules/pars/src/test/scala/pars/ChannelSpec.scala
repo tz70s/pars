@@ -14,10 +14,10 @@ class ChannelSpec extends NetParsSpec {
       val coordinator = StandAloneCoordinator[IO].bindAndHandle(StandAloneCoordinatorAddress)
 
       implicit val pe: ParEffect[IO] = ParEffect[IO].bindCoordinators(Seq(StandAloneCoordinatorAddress))
-      val parServer = pe.server
 
+      val parServer = pe.server
       val background = Stream(parServer.bindAndHandle, coordinator).parJoin(2)
-      val run = parServer.allocate(TestPars, Strategy(1)) concurrently background
+      val run = parServer.spawn(TestPars) concurrently background
 
       val source = Stream(1, 2, 3, 4, 5)
 

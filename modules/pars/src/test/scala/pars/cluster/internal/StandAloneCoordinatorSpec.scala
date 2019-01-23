@@ -40,7 +40,7 @@ class StandAloneCoordinatorSpec extends NetParsSpec with Matchers {
 
       def request: Stream[IO, Protocol] =
         NetService[IO]
-          .backOffWriteN(StandAloneCoordinatorAddress, Stream.emit(AllocationRequest(TestPars.toUnsafe, Strategy(1))))
+          .backOffWriteN(StandAloneCoordinatorAddress, Stream.emit(AllocationRequest(TestPars.toUnsafe)))
 
       val run = request concurrently coordinator
       val err = run.compile.toList.unsafeRunSync().head
@@ -55,8 +55,7 @@ class StandAloneCoordinatorSpec extends NetParsSpec with Matchers {
       def request: Stream[IO, Protocol] =
         NetService[IO]
           .backOffWriteN(StandAloneCoordinatorAddress,
-                         Stream(Ping(TcpSocketConfig("localhost", 7856)),
-                                AllocationRequest(TestPars.toUnsafe, Strategy(1))))
+                         Stream(Ping(TcpSocketConfig("localhost", 7856)), AllocationRequest(TestPars.toUnsafe)))
 
       val run = request concurrently coordinator
       val rets = run.compile.toList.unsafeRunSync()
@@ -65,17 +64,17 @@ class StandAloneCoordinatorSpec extends NetParsSpec with Matchers {
       rets.tail.head shouldBe a[RequestErr]
     }
 
-    "allocate and accept a successful response" in {
+    "spawn and accept a successful response" in {
       val coordinator = StandAloneCoordinator[IO].bindAndHandle(StandAloneCoordinatorAddress)
 
-      val protocolF = new ParServer[IO](Seq(StandAloneCoordinatorAddress))
+      val server = new ParServer[IO](Seq(StandAloneCoordinatorAddress))
 
-      val background = Stream(protocolF.bindAndHandle, coordinator).parJoin(2)
-      val run = protocolF.allocate(TestPars, Strategy(1)) concurrently background
+      val background = Stream(server.bindAndHandle, coordinator).parJoin(2)
+      val run = server.spawn(TestPars) concurrently background
 
       val res = run.compile.toList.unsafeRunSync()
 
-      res.head shouldBe CommandOk(TestChannel)
+      res.head shouldBe TestChannel
     }
   }
 }
