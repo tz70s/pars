@@ -67,7 +67,7 @@ private[pars] class CoordinatorProxy[F[_]: RaiseThrowable: Concurrent: ContextSh
       case AllocationCommand(pars, workers) =>
         repository
           .allocate(pars.asInstanceOf[UnsafePars[F]], workers)
-          .map(_ => CommandOk(pars.channel))
+          .map(_ => CommandOk(pars.in))
 
       case RemovalCommand(channel) =>
         repository.remove(channel).map(_ => CommandOk(channel))

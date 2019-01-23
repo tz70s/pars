@@ -27,11 +27,15 @@ trait NetParsSpec extends ParsSpec with BeforeAndAfterAll {
 
   def TestChannel(implicit parEffect: ParEffect[IO]): Channel[Int] = Channel[Int]("TestChannel")
 
-  def TestPars(implicit parEffect: ParEffect[IO]): Pars[IO, Int, Int] = Pars.concat(TestChannel) { s: Stream[IO, Int] =>
-    for {
-      i <- s
-      _ <- Stream.eval(IO { println(s"Pars get the number -> $i") })
-      u <- Stream.emit(i + 1)
-    } yield u
+  def TestChannelOut(implicit parEffect: ParEffect[IO]): Channel[Int] =
+    Channel[Int]("TestChannelOut", ChannelOutputStrategy.EmptyPlaceHolder)
+
+  def TestPars(implicit parEffect: ParEffect[IO]): Pars[IO, Int, Int] = Pars.concat(TestChannel, TestChannelOut) {
+    s: Stream[IO, Int] =>
+      for {
+        i <- s
+        _ <- Stream.eval(IO { println(s"Pars get the number -> $i") })
+        u <- Stream.emit(i + 1)
+      } yield u
   }
 }

@@ -11,37 +11,43 @@ class ChannelSpec extends NetParsSpec {
 
   "Channel" should {
 
-    "work with pub method" in {
+    /*
+    "work with unsafeSend method" in {
       val coordinator = StandAloneCoordinator[IO].bindAndHandle(StandAloneCoordinatorAddress)
 
       implicit val pe: ParEffect[IO] = ParEffect[IO].bindCoordinators(Seq(StandAloneCoordinatorAddress))
 
-      val parServer = pe.server
-      val background = Stream(parServer.bindAndHandle, coordinator).parJoin(2)
-      val run = parServer.spawn(TestPars) concurrently background
+      val server = pe.server
+      val background = Stream(server.bindAndHandle, coordinator).parJoin(2)
+
+      val run = server.spawn(TestPars) concurrently background
 
       val source = Stream(1, 2, 3, 4, 5)
 
-      val pub = TestChannel.pub[IO, Int](source)
+      val unsafeSend = TestChannel.unsafeSend[IO, Int](source)
 
-      (run *> pub).compile.drain.unsafeRunSync()
+      IO.race(Timer[IO].sleep(5.seconds), (run *> unsafeSend).compile.drain).unsafeRunSync()
     }
+     */
 
-    "work with sub method" in {
+    "work with receive method" in {
       val coordinator = StandAloneCoordinator[IO].bindAndHandle(StandAloneCoordinatorAddress)
 
       implicit val pe: ParEffect[IO] = ParEffect[IO].bindCoordinator(StandAloneCoordinatorAddress)
 
-      val channel = TestChannel(pe)
+      val channel = Channel[Int]("receiver")
 
-      val background =
-        Stream(pe.server.bindAndHandle, coordinator, channel.pub[IO, Int](Stream(1, 2, 3))).parJoinUnbounded
+      val par = Pars(channel)(Stream(1, 2, 3, 4, 5).covary[IO])
 
-      val out = channel.sub[IO].take(3)
+      val background = Stream(pe.server.bindAndHandle,
+                              coordinator,
+                              pe.spawn(par).flatMap(c => pe.send(c, Stream.empty.covary[IO]))).parJoinUnbounded
+
+      val out = channel.receive[IO]
 
       val result = out concurrently background
 
-      result.compile.toList.unsafeRunSync() shouldBe List(1, 2, 3)
+      IO.race(Timer[IO].sleep(5.seconds), result.compile.toList).unsafeRunSync() shouldBe Right(List(1, 2, 3, 4, 5))
     }
   }
 }

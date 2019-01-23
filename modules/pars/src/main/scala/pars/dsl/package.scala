@@ -15,14 +15,9 @@ package object dsl {
 
     override def pure[A](x: A): ParsM[F, A] = Pars.emit(x)
 
-    override def flatMap[A, B](fa: ParsM[F, A])(f: A => ParsM[F, B]): ParsM[F, B] = {
-      // Implicitly generate channel instance.
-      val channel = Channel[A](s"FlatMap${fa.channel.id}ImplicitChannel")
-
-      val source = channel.pub(fa.evaluateToStream)
-
+    override def flatMap[A, B](fa: ParsM[F, A])(f: A => ParsM[F, B]): ParsM[F, B] =
+      // TODO: the current monad implementation should replace output channel as new one.
       Pars(fa.evaluateToStream.map(f).map(_.evaluateToStream).flatMap(s => s))
-    }
 
     override def tailRecM[A, B](a: A)(f: A => ParsM[F, Either[A, B]]): ParsM[F, B] = ???
   }

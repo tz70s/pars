@@ -3,8 +3,8 @@ package pars.internal
 import java.nio.channels.AsynchronousChannelGroup
 
 import cats.effect.{Concurrent, ContextShift, Sync, Timer}
-import fs2.{INothing, RaiseThrowable, Stream}
-import fs2.concurrent.{NoneTerminatedQueue, Queue}
+import fs2.{RaiseThrowable, Stream}
+import fs2.concurrent.NoneTerminatedQueue
 import io.chrisdavenport.log4cats.Logger
 import io.chrisdavenport.log4cats.slf4j.Slf4jLogger
 import pars.internal.Protocol.{ChannelProtocol, Event, EventErr, EventOk}
@@ -32,26 +32,29 @@ private[pars] class ChannelRouter[F[_]: Concurrent: ContextShift: RaiseThrowable
     implicit acg: AsynchronousChannelGroup
 ) {
 
-  import ChannelRouter._
-
   implicit val log: Logger[F] = Slf4jLogger.unsafeCreate[F]
 
   private val receivers = new EvaluationReceivers[F]
 
-  def subscribe[T](channel: Channel[T], queue: Queue[F, T]): Stream[F, Unit] =
+  def subscribe[T](channel: Channel[T], queue: NoneTerminatedQueue[F, T]): Stream[F, Unit] =
     receivers.subscribe(channel, queue)
 
   def send(event: ChannelProtocol, blockUntilEntry: FiniteDuration = 500.millis): Stream[F, Unit] =
     event match {
       case evt: Event[F, _] =>
         val policy = evt.to.strategy
-        for {
-          entry <- blockUntilEntryAvailable(evt.to)
-          s <- policy match {
-            case ChannelOutputStrategy.Concurrent => unicast(entry, evt)
-            case ChannelOutputStrategy.Broadcast => broadcast(entry, evt)
-          }
-        } yield s
+        if (policy == ChannelOutputStrategy.EmptyPlaceHolder) {
+          Stream.empty
+        } else {
+          for {
+            entry <- blockUntilEntryAvailable(evt.to)
+            s <- policy match {
+              case ChannelOutputStrategy.Concurrent => unicast(entry, evt)
+              case ChannelOutputStrategy.Broadcast => broadcast(entry, evt)
+              case _ => Stream.empty
+            }
+          } yield s
+        }
 
       case _ => throw new IllegalArgumentException(s"Unexpected protocol subtype to receive here.")
     }
@@ -92,14 +95,19 @@ private[pars] class ChannelRouter[F[_]: Concurrent: ContextShift: RaiseThrowable
       case _ => throw new IllegalArgumentException(s"Unexpected protocol subtype to receive here.")
     }
 
-  private def process(stream: Stream[F, _], channel: UnsafeChannel): Stream[F, Unit] =
-    for {
+  private def process(stream: Stream[F, _], channel: UnsafeChannel): Stream[F, Unit] = {
+    val result = for {
       entry <- repository.lookUp(channel)
       _ <- Stream.eval(Logger[F].trace(s"Get the entry $entry"))
-      s <- entry.machine.asInstanceOf[Pars[F, Any, _]].evaluateToStream(stream)
-      _ <- Stream.eval(Logger[F].trace(s"Evaluation done, get the value $s"))
-      _ <- receivers.publish(channel, s)
-    } yield ()
+    } yield (entry.pars.asInstanceOf[Pars[F, Any, _]].evaluateToStream(stream), entry)
+
+    result.flatMap {
+      case (s, entry) =>
+        Stream(receivers.publish(channel, s.map(Some(_)) ++ Stream.emit(None)), send(Event(entry.pars.out, s)))
+          .parJoin(2)
+          .drain
+    }
+  }
 }
 
 private[pars] object ChannelRouter {
@@ -109,32 +117,32 @@ private[pars] object ChannelRouter {
   ): ChannelRouter[F] = new ChannelRouter(repository)
 }
 
-class EvaluationReceivers[F[_]: Concurrent] {
-  private val queues = TrieMap[UnsafeChannel, Queue[F, Any]]()
+private[pars] class EvaluationReceivers[F[_]: Concurrent] {
+  private val queues = TrieMap[UnsafeChannel, NoneTerminatedQueue[F, Any]]()
 
-  def subscribe[T](channel: Channel[T], queue: Queue[F, T]): Stream[F, Unit] =
+  def subscribe[T](channel: Channel[T], queue: NoneTerminatedQueue[F, T]): Stream[F, Unit] =
     Stream.eval(Sync[F].delay {
-      queues += (channel -> queue.asInstanceOf[Queue[F, Any]])
+      queues += (channel -> queue.asInstanceOf[NoneTerminatedQueue[F, Any]])
       ()
     })
 
-  def publish(channel: UnsafeChannel, value: Any): Stream[F, Unit] =
+  def publish(channel: UnsafeChannel, values: Stream[F, Option[Any]]): Stream[F, Unit] =
     queues.get(channel) match {
-      case Some(q) => Stream.eval(q.enqueue1(value))
+      case Some(q) => q.enqueue(values)
       case _ => Stream.empty
     }
 
 }
 
-case class ChannelRouteEntry[F[_]](machine: Pars[F, _, _], endpoints: Seq[TcpSocketConfig])
+case class ChannelRouteEntry[F[_]](pars: Pars[F, _, _], endpoints: Seq[TcpSocketConfig])
 
 private[pars] class ChannelRoutingTable[F[_]: Sync: RaiseThrowable] {
 
   private val table = TrieMap[UnsafeChannel, ChannelRouteEntry[F]]()
 
-  def allocate(machine: UnsafePars[F], endpoints: Seq[TcpSocketConfig]): Stream[F, Unit] =
+  def allocate(pars: UnsafePars[F], endpoints: Seq[TcpSocketConfig]): Stream[F, Unit] =
     Stream.eval(Sync[F].delay {
-      table += (machine.channel -> ChannelRouteEntry(machine, endpoints))
+      table += (pars.in -> ChannelRouteEntry(pars, endpoints))
       ()
     })
 

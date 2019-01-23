@@ -34,7 +34,8 @@ import fs2.{RaiseThrowable, Stream}
  */
 class Pars[F[_], -In, +Out] private[pars] (
     val process: Stream[F, In] => Stream[F, Out],
-    val channel: Channel[_ >: In],
+    val in: Channel[_ >: In],
+    val out: Channel[Out],
     val strategy: Strategy = Strategy(1)
 )(implicit val ev: ParEffect[F])
     extends Serializable {
@@ -45,10 +46,11 @@ class Pars[F[_], -In, +Out] private[pars] (
 }
 
 class ParsM[F[_], +Out] private[pars] (process: Stream[F, Out],
-                                       channel: Channel[Unit],
+                                       in: Channel[Unit],
+                                       out: Channel[Out],
                                        strategy: Strategy = Strategy(1))(
     implicit ev: ParEffect[F]
-) extends Pars[F, Unit, Out](_ => process, channel, strategy) {}
+) extends Pars[F, Unit, Out](_ => process, in, out, strategy) {}
 
 object Pars {
 
@@ -96,8 +98,13 @@ object Pars {
   def apply[F[_], Out](stream: Stream[F, Out])(implicit ev: ParEffect[F]): ParsM[F, Out] =
     supplyStream(stream)
 
+  def apply[F[_], Out](out: Channel[Out])(stream: Stream[F, Out])(implicit ev: ParEffect[F]): ParsM[F, Out] =
+    new ParsM[F, Out](stream, Channel(s"system-generate${stream.hashCode()}-${ev.coordinators}-in"), out)
+
   private def supplyStream[F[_], Out](stream: Stream[F, Out])(implicit ev: ParEffect[F]): ParsM[F, Out] =
-    new ParsM[F, Out](stream, Channel(s"SystemGenerate${stream.hashCode()}-${ev.coordinators}"))
+    new ParsM[F, Out](stream,
+                      Channel(s"system-generate${stream.hashCode()}-${ev.coordinators}-in"),
+                      Channel(s"system-generate${stream.hashCode()}-${ev.coordinators}-out"))
 
   /**
    * Concatenate to a specified channel.
@@ -108,14 +115,16 @@ object Pars {
    * }
    * }}}
    *
-   * @param channel Input channel to evaluated Stream.
+   * @param in Input channel to evaluated Stream.
+   * @param out Output channel after evaluation.
    * @param process The pipe process evaluation from a stream to another stream.
    */
   def concat[F[_], In, Out](
-      channel: Channel[In],
+      in: Channel[In],
+      out: Channel[Out],
       strategy: Strategy = Strategy(1)
   )(process: Stream[F, In] => Stream[F, Out])(implicit ev: ParEffect[F]) =
-    new Pars[F, In, Out](process, channel, strategy)
+    new Pars[F, In, Out](process, in, out, strategy)
 
   /**
    * Perform offloading, which takes one system implicit generated channel.
@@ -144,7 +153,7 @@ object Pars {
     val receiver = implicitReceiver(channel)
 
     for {
-      q <- Stream.eval(Queue.unbounded[F, T])
+      q <- Stream.eval(Queue.boundedNoneTerminated[F, T](1024))
       _ <- ev.spawn(receiver)
       _ <- ev.server.subscribe(channel, q)
       s <- q.dequeue
@@ -152,5 +161,5 @@ object Pars {
   }
 
   private def implicitReceiver[F[_], I](channel: Channel[I])(implicit ev: ParEffect[F]): Pars[F, I, I] =
-    Pars.concat(channel, Strategy(replicas = 1, model = NoEvaluate))(s => s)
+    Pars.concat(channel, Channel.NotUsed, Strategy(replicas = 1, model = NoEvaluate))(s => s)
 }

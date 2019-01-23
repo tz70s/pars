@@ -68,7 +68,7 @@ class StandAloneCoordinatorParServer[F[_]: Concurrent: ContextShift: RaiseThrowa
           val strategy = pars.strategy
           val replicas = if (strategy.replicas > workers.size) workers.size else strategy.replicas
           allocateToWorkers(replicas, pars.asInstanceOf[UnsafePars[F]])
-            .map(l => RequestOk(pars.channel, l))
+            .map(l => RequestOk(pars.in, l))
             .handleErrorWith { t =>
               Stream.eval(Logger[F].error(s"Allocation error, cause : $t")) *> Stream.emit(RequestErr(t))
             }
@@ -99,7 +99,7 @@ class StandAloneCoordinatorParServer[F[_]: Concurrent: ContextShift: RaiseThrowa
     val address = worker._1
     NetService[F].writeN(address, Stream.emit(command)).flatMap {
       case CommandOk(c) =>
-        if (command.pars.channel == c) Stream.emit(worker)
+        if (command.pars.in == c) Stream.emit(worker)
         else Stream.raiseError(new Exception("Unexpected channel return while allocating."))
       case CommandErr(t) => Stream.raiseError(t)
     }

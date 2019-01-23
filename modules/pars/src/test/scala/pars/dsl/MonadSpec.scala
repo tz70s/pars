@@ -1,7 +1,7 @@
 package pars.dsl
 
 import cats.effect.{IO, Timer}
-import pars.{NetParsSpec, ParEffect, Pars}
+import pars.{Channel, NetParsSpec, ParEffect, Pars}
 import cats.implicits._
 import pars.cluster.internal.StandAloneCoordinator
 import fs2.Stream
@@ -16,18 +16,20 @@ class MonadSpec extends NetParsSpec {
 
       implicit val pe: ParEffect[IO] = ParEffect[IO].bindCoordinator(StandAloneCoordinatorAddress)
 
-      val pars = Stream.emits(1 to 10).covary[IO].pars.flatMap { i =>
-        Pars(Stream.eval(IO { println(s"Successfully launch pars instance, mapping value $i"); i }))
+      val out = Channel[Int]("receiver")
+
+      val pars = Stream.emits(0 to 10).covary[IO].pars.flatMap { i =>
+        Pars(out)(Stream.eval(IO { println(s"Successfully launch pars instance, mapping value $i"); i }))
       }
 
-      val background =
-        Stream(StandAloneCoordinator[IO].bindAndHandle(StandAloneCoordinatorAddress)).parJoinUnbounded
+      val background = Stream(StandAloneCoordinator[IO].bindAndHandle(StandAloneCoordinatorAddress),
+                              Pars.bind(pars).flatMap(c => pe.send(c, Stream.empty.covary[IO]))).parJoinUnbounded
 
-      val spawnAndFire = Pars.bind(pars).flatMap(c => c.pub(Stream.empty.covary[IO]))
+      val receive = out.receive[IO] concurrently background
 
       val timeout = Timer[IO].sleep(3.seconds)
 
-      IO.race(timeout, spawnAndFire.concurrently(background).compile.drain).unsafeRunSync()
+      IO.race(timeout, receive.compile.toList).unsafeRunSync() shouldBe Right((0 to 10).toList)
     }
   }
 }

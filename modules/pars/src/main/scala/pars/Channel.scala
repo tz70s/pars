@@ -26,13 +26,13 @@ final case class Channel[+T](id: String, strategy: ChannelOutputStrategy = Chann
    *
    * @example {{{
    * val pubStream = Stream(1, 2, 3)
-   * val pubResultStream = Channel[Int]("IntStream").pub(pubStream)
+   * val pubResultStream = Channel[Int]("IntStream").unsafeSend(pubStream)
    * }}}
    *
    * @param source Source stream to publish.
    * @return Return the publish evaluation result.
    */
-  def pub[F[_], U >: T](source: Stream[F, U])(implicit parEffect: ParEffect[F]): Stream[F, Unit] =
+  private[pars] def unsafeSend[F[_], U >: T](source: Stream[F, U])(implicit parEffect: ParEffect[F]): Stream[F, Unit] =
     parEffect.send(this, source)
 
   /**
@@ -41,16 +41,18 @@ final case class Channel[+T](id: String, strategy: ChannelOutputStrategy = Chann
    * Note that the implicit spawn binding should be taken in scope for channel resolution.
    *
    * @example {{{
-   * val subStream = Channel[Int]("IntStream").sub
+   * val receive = Channel[Int]("IntStream").receive
    * }}}
    *
    * @return The subscribed stream to concat with other stream to deal with.
    */
-  def sub[F[_]: ParEffect: Concurrent: ContextShift: Timer]: Stream[F, T] = Pars.bind(this)
+  def receive[F[_]: ParEffect: Concurrent: ContextShift: Timer]: Stream[F, T] = Pars.bind(this)
 }
 
 object Channel {
   val ChannelSize: Int = pureconfig.loadConfigOrThrow[Int]("pars.channel.size")
+
+  val NotUsed = Channel("empty-place-holder", ChannelOutputStrategy.EmptyPlaceHolder)
 }
 
 sealed trait ChannelOutputStrategy extends Serializable
@@ -58,4 +60,5 @@ sealed trait ChannelOutputStrategy extends Serializable
 object ChannelOutputStrategy {
   case object Concurrent extends ChannelOutputStrategy
   case object Broadcast extends ChannelOutputStrategy
+  case object EmptyPlaceHolder extends ChannelOutputStrategy
 }

@@ -23,12 +23,19 @@ trait ParEffect[F[_]] extends Serializable {
 
   def spawn[I, O](pars: Pars[F, I, O]): Stream[F, Channel[I]] = server.spawn(pars)
 
-  def send[I](channel: Channel[I], events: Stream[F, I]): Stream[F, Unit] = server.send(channel, events)
+  private[pars] def sendInClosure[I](channel: Channel[I], events: Stream[F, I]): Stream[F, Unit] =
+    for {
+      pe <- ParEffectOp.findExisted[F](coordinators)
+      s <- pe.server.send(channel, events)
+    } yield s
+
+  private[pars] def send[I](channel: Channel[I], events: Stream[F, I]): Stream[F, Unit] =
+    server.send(channel, events)
 }
 
 private[pars] object ParEffectOp {
 
-  private trait Phantom[T]
+  trait Phantom[T]
 
   private val pool = TrieMap[Seq[TcpSocketConfig], ParEffect[Phantom]]()
 
