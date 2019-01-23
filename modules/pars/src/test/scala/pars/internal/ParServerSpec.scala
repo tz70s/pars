@@ -13,7 +13,7 @@ class ParServerSpec extends NetParsSpec with Matchers with BeforeAndAfterAll {
 
   "ParServer" should {
 
-    "spawn flying TestPars and collect data back after evaluation" in {
+    "spawn pars and ensure allocation correctness" in {
       import Protocol._
 
       val source = List(1, 2, 3)
@@ -28,7 +28,7 @@ class ParServerSpec extends NetParsSpec with Matchers with BeforeAndAfterAll {
 
       val result = (writes concurrently parServer).compile.toList.unsafeRunSync()
 
-      result shouldBe List(CommandOk(TestChannel), EventOk(2), EventOk(3), EventOk(4))
+      result shouldBe List(CommandOk(TestChannel))
     }
 
   }

@@ -1,5 +1,6 @@
 package pars
 
+import cats.effect.{Concurrent, ContextShift, Timer}
 import fs2.Stream
 
 /**
@@ -45,7 +46,7 @@ final case class Channel[+T](id: String, strategy: ChannelOutputStrategy = Chann
    *
    * @return The subscribed stream to concat with other stream to deal with.
    */
-  def sub[F[_]: ParEffect]: Stream[F, T] = ???
+  def sub[F[_]: ParEffect: Concurrent: ContextShift: Timer]: Stream[F, T] = Pars.bind(this)
 }
 
 object Channel {

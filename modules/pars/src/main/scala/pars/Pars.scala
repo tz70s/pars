@@ -1,6 +1,7 @@
 package pars
 
-import cats.effect.{Concurrent, ContextShift, Timer}
+import cats.effect.{Concurrent, ContextShift, Sync, Timer}
+import fs2.concurrent.Queue
 import fs2.{RaiseThrowable, Stream}
 
 /**
@@ -111,9 +112,10 @@ object Pars {
    * @param process The pipe process evaluation from a stream to another stream.
    */
   def concat[F[_], In, Out](
-      channel: Channel[In]
+      channel: Channel[In],
+      strategy: Strategy = Strategy(1)
   )(process: Stream[F, In] => Stream[F, Out])(implicit ev: ParEffect[F]) =
-    new Pars[F, In, Out](process, channel)
+    new Pars[F, In, Out](process, channel, strategy)
 
   /**
    * Perform offloading, which takes one system implicit generated channel.
@@ -135,4 +137,20 @@ object Pars {
     val pe = pars.ev
     pe.spawn(pars).concurrently(pe.server.bindAndHandle)
   }
+
+  def bind[F[_]: Concurrent: ContextShift: Timer: RaiseThrowable, T](
+      channel: Channel[T]
+  )(implicit ev: ParEffect[F]): Stream[F, T] = {
+    val receiver = implicitReceiver(channel)
+
+    for {
+      q <- Stream.eval(Queue.unbounded[F, T])
+      _ <- ev.spawn(receiver)
+      _ <- ev.server.subscribe(channel, q)
+      s <- q.dequeue
+    } yield s
+  }
+
+  private def implicitReceiver[F[_], I](channel: Channel[I])(implicit ev: ParEffect[F]): Pars[F, I, I] =
+    Pars.concat(channel, Strategy(replicas = 1, model = NoEvaluate))(s => s)
 }

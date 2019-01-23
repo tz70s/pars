@@ -38,7 +38,7 @@ private[pars] class CoordinatorProxy[F[_]: RaiseThrowable: Concurrent: ContextSh
     def retry(retries: Int = 3, backOff: FiniteDuration = 100.millis): Stream[F, Channel[I]] =
       NetService[F]
         .writeN(selectCoordinator(coordinators), Stream.emit(AllocationRequest(pars.toUnsafe)))
-        .handleError(t => RequestErr(t))
+        .handleError { case t: Throwable => RequestErr(t) }
         .flatMap {
           case RequestErr(t) =>
             if (retries > 0)

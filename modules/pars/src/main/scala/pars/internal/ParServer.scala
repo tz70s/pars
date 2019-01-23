@@ -3,6 +3,7 @@ package pars.internal
 import java.nio.channels.AsynchronousChannelGroup
 
 import cats.effect.{Concurrent, ContextShift, Timer}
+import fs2.concurrent.{NoneTerminatedQueue, Queue}
 import fs2.{Pipe, RaiseThrowable, Stream}
 import pars.cluster.CoordinationProtocol.CoordinatorToProxy
 import pars.cluster.CoordinatorProxy
@@ -25,6 +26,9 @@ private[pars] class ParServer[F[_]: Concurrent: ContextShift: Timer: RaiseThrowa
     proxy.spawn(pars)
 
   def send[T, I](to: Channel[T], event: Stream[F, I]): Stream[F, Unit] = router.send(Event(to, event))
+
+  def subscribe[T](channel: Channel[T], queue: Queue[F, T]): Stream[F, Unit] =
+    router.subscribe(channel, queue)
 
   def bindAndHandle: Stream[F, Unit] = NetService[F].bindAndHandle(logic).concurrently(background)
 

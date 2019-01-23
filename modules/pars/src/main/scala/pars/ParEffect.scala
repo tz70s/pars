@@ -115,7 +115,11 @@ object ParEffect {
  * @param replicas Number of tasks replicated to cluster-wide nodes.
  * @param roles Constraint for task affinity.
  */
-case class Strategy(replicas: Int, roles: List[String] = List.empty)
+case class Strategy(replicas: Int, roles: List[String] = List.empty, model: EvaluationModel = Evaluate)
+
+sealed trait EvaluationModel
+case object NoEvaluate extends EvaluationModel
+case object Evaluate extends EvaluationModel
 
 /**
  * Bridge configuration and assembly strategies.
