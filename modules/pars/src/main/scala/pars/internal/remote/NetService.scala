@@ -90,7 +90,7 @@ private[pars] class NetService[F[_]: Concurrent: ContextShift](implicit val acg:
                     sleep: FiniteDuration = 100.millis,
                     factors: Int = 2): Stream[F, Protocol] =
     writeN(rmt, source).handleErrorWith { throwable =>
-      if (retry > 0) backOffWriteN(rmt, source, retry - 1, sleep * factors) else Stream.raiseError(throwable)
+      if (retry > 0) backOffWriteN(rmt, source, retry - 1, sleep * factors) else Stream(throw throwable)
     }
 }
 

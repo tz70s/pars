@@ -1,8 +1,11 @@
 package pars
 
-import cats.effect.{Concurrent, ContextShift, Timer}
+import cats.Functor
+import cats.effect._
 import fs2.concurrent.Queue
 import fs2.{RaiseThrowable, Stream}
+
+import scala.concurrent.duration._
 
 /**
  * Channel for pars composition.
@@ -41,6 +44,48 @@ final case class Channel[+T](id: String, strategy: ChannelOutputStrategy = Chann
    */
   def unit[F[_]]()(implicit pe: ParEffect[F]): Stream[F, Unit] =
     pe.send(this, Stream.empty.covary[F])
+
+  def replay[F[_], U >: T](
+      source: Stream[F, U],
+      retries: Int = 10,
+      backOff: FiniteDuration = 100.millis,
+      backOffMax: FiniteDuration = 2000.millis,
+      factor: Int = 2
+  )(implicit pe: ParEffect[F], functor: Functor[F], sync: Sync[F], timer: Timer[F]): Stream[F, Unit] =
+    pe.send(this, Stream.empty.covary[F]).handleErrorWith { t =>
+      if (retries > 0) {
+        val nfactor = if (backOff > backOffMax) 1 else factor
+        for {
+          _ <- Stream.awakeDelay[F](backOff * nfactor)
+          _ <- Stream.eval(Sync[F].delay(println(s"Replay channel $this, due to cause : $t")))
+          _ <- replay(source, retries, backOff * nfactor)
+        } yield ()
+      } else {
+        Stream(throw t)
+      }
+    }
+
+  def replayUnit[F[_]](retries: Int = 10,
+                       backOff: FiniteDuration = 100.millis,
+                       backOffMax: FiniteDuration = 2000.millis,
+                       factor: Int = 2)(
+      implicit pe: ParEffect[F],
+      functor: Functor[F],
+      sync: Sync[F],
+      timer: Timer[F]
+  ): Stream[F, Unit] =
+    pe.send(this, Stream.empty.covary[F]).handleErrorWith { t =>
+      if (retries > 0) {
+        val nfactor = if (backOff > backOffMax) 1 else factor
+        for {
+          _ <- Stream.awakeDelay[F](backOff * nfactor)
+          _ <- Stream.eval(Sync[F].delay(println(s"Replay channel $this, due to cause : $t")))
+          _ <- replayUnit(retries, backOff * nfactor)
+        } yield ()
+      } else {
+        Stream(throw t)
+      }
+    }
 
   /**
    * Subscribe stream of value T from channel, the output strategy is specify by the [[ChannelOutputStrategy]]
@@ -81,6 +126,7 @@ final case class Channel[+T](id: String, strategy: ChannelOutputStrategy = Chann
 }
 
 object Channel {
+
   val ChannelSize: Int = pureconfig.loadConfigOrThrow[Int]("pars.channel.size")
 
   val NotUsed = Channel("not-used", ChannelOutputStrategy.NotUsed)

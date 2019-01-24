@@ -16,9 +16,10 @@ import scala.collection.concurrent.TrieMap
 import scala.util.Random
 import cats.implicits._
 import pars.{NotStick, Stick}
-import pars.internal.{ParsNotFoundException, UnsafeChannel, UnsafePars}
+import pars.internal.{UnsafeChannel, UnsafePars}
 
 import scala.concurrent.duration._
+import scala.util.control.NonFatal
 
 class StandAloneCoordinator[F[_]: Concurrent: ContextShift: Timer](override val address: TcpSocketConfig)(
     implicit val acg: AsynchronousChannelGroup
@@ -101,7 +102,7 @@ class StandAloneCoordinatorParServer[F[_]: Concurrent: ContextShift: RaiseThrowa
       val strategy = pars.strategy
       val replicas = if (strategy.replicas > workers.size) workers.size else strategy.replicas
       for {
-        records <- allocateToWorkers(replicas, pars)
+        records <- try { allocateToWorkers(replicas, pars) } catch { case NonFatal(t) => Stream(throw t) }
         // TODO: is the repository update here correct?
         _ <- Stream.eval(Sync[F].delay(repository += (pars.in -> ParsRecords(pars, records.toSet))))
         res = RequestOk(pars, records)
@@ -112,11 +113,12 @@ class StandAloneCoordinatorParServer[F[_]: Concurrent: ContextShift: RaiseThrowa
                                 pars: UnsafePars[F],
                                 retry: Int = 3): Stream[F, List[TcpSocketConfig]] = {
     // FIXME - current implementation, the number of allocated will be less than request replicas.
-    val workers = (0 to replicas).map(_ => randomSelectWorkerEndPoint).toSet
-    val command = AllocationCommand(pars, workers.toSeq.map(_._1))
+    val s = for {
+      workers <- Stream.eval(Sync[F].delay((0 to replicas).map(_ => randomSelectWorkerEndPoint).toSet))
+      command = AllocationCommand(pars, workers.toSeq.map(_._1))
+    } yield Stream.emits(workers.toSeq).flatMap(worker => commandAllocation(worker, command))
 
-    Stream(Stream.emits(workers.toSeq).flatMap(worker => commandAllocation(worker, command)))
-      .parJoin(workers.size)
+    s.parJoin(workers.size)
       .fold(List[TcpSocketConfig]())((s, c) => c._1 :: s)
       .handleErrorWith { t =>
         if (retry > 0) allocateToWorkers(replicas, pars, retry - 1) else Stream.raiseError(t)
@@ -136,19 +138,72 @@ class StandAloneCoordinatorParServer[F[_]: Concurrent: ContextShift: RaiseThrowa
   }
 
   private def randomSelectWorkerEndPoint: (TcpSocketConfig, WorkerState) = synchronized {
+    require(workers.nonEmpty)
     val index = Random.nextInt(workers.size)
     workers.iterator.drop(index).next()
   }
 
-  def livenessChecker(ttl: FiniteDuration = 1000.millis): Stream[F, Unit] =
+  def livenessChecker(ttl: FiniteDuration = 5000.millis): Stream[F, Unit] = {
+    def runInfinite(): Stream[F, Unit] = {
+      val l = for {
+        currentTime <- Stream.eval(
+          ContextShift[F].shift *> Timer[F].sleep(ttl) *> Timer[F].clock.realTime(MILLISECONDS)
+        )
+        allowedLastLived = currentTime - ttl.toMillis
+        _ <- Stream
+          .eval(Sync[F].delay(synchronized {
+            val drops = workers.filter { case (_, state) => state.lastLive < allowedLastLived }
+            workers = workers -- drops.keySet
+            drops.keySet
+          }))
+          .flatMap { drop =>
+            if (drop.nonEmpty)
+              Stream
+                .eval(Logger[F].debug(s"Rebalance occurred, current repository: $repository"))
+                .concurrently(reBalance(drop))
+            else Stream.eval(Logger[F].info(s"Outlive checkers update workers to $workers"))
+          }
+      } yield ()
+
+      l.handleErrorWith { t: Throwable =>
+        Stream.eval(Logger[F].error(s"Error occurred when running outlive checker: $t")) >> runInfinite()
+      } >> runInfinite()
+    }
+
+    runInfinite()
+  }
+
+  /**
+   * Commands to all visible nodes, useful for enforcing state update.
+   *
+   * Workflow as following:
+   *
+   * 1. Checkout the dropping workers and mark them for further reducing.
+   * 2. Transform them and filter out channels that don't need rebalancing and sticky pars (i.e. implicit receiver)
+   * 3. New allocation process (NOTE: this is a waste operation, since we re-allocate all, is not scalable.)
+   * 4. Restore new one to repository.
+   * 5. What about something like channel routing need info?
+   *    Refer to entity look up request and resend for look up repository is fine.
+   *    Therefore, we passively update channel routes.
+   */
+  private def reBalance(dropWorkers: Set[TcpSocketConfig]): Stream[F, Unit] =
     for {
-      currentTime <- Stream.eval(
-        ContextShift[F].shift *> Timer[F].sleep(5000.millis) *> Timer[F].clock.realTime(MILLISECONDS)
-      )
-      allowedLastLived = currentTime - ttl.toMillis
-      _ <- Stream.eval(Sync[F].delay(synchronized {
-        workers = workers.filter { case (_, state) => state.lastLive >= allowedLastLived }
-      }))
-      _ <- Stream.eval(Logger[F].info(s"Update workers to $workers after outlive checker."))
+      entries <- Stream.eval(Sync[F].delay {
+        repository.map {
+          case (channel, records) =>
+            val renew = records.records -- dropWorkers
+            if (renew.size == records.records.size) None
+            else
+              Some(ParsRecords(records.pars, records.records -- dropWorkers))
+        }
+      })
+      e <- Stream
+        .emits(entries.toSeq.flatten)
+        .filter(p => p.pars.strategy.model == NotStick)
+      r <- allocateToWorkers(e.pars.strategy.replicas, e.pars).handleErrorWith { t =>
+        Stream.eval(Logger[F].error(s"Rebalancing error, see $t")) *> Stream(throw t)
+      }
+      _ <- Stream.eval(Sync[F].delay { repository += (e.pars.in -> ParsRecords(e.pars, r.toSet)) })
+      _ <- Stream.eval(Logger[F].debug(s"Rebalance done, current repository: $repository"))
     } yield ()
 }

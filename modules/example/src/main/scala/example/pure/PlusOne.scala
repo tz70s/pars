@@ -1,12 +1,10 @@
-package example
+package example.pure
 
 import cats.effect.{ContextShift, IO, Timer}
-import pars.{Channel, ParEffect, Pars, ParsM}
 import fs2.Stream
+import pars.{Channel, ParEffect, Pars, ParsM}
 
 import scala.concurrent.duration._
-
-import cats.implicits._
 
 object PlusOne {
 
@@ -28,6 +26,6 @@ object PlusOne {
     for {
       c <- Pars.spawn(source).concurrently(Pars.spawn(mapper))
       _ <- Stream.awakeEvery[IO](1000.millis)
-      s <- mapperOut.receive[IO].concurrently(c.unit())
+      s <- mapperOut.receive[IO].concurrently(c.replayUnit())
     } yield s
 }

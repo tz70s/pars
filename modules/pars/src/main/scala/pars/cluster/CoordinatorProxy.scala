@@ -60,7 +60,7 @@ private[pars] class CoordinatorProxy[F[_]: RaiseThrowable: Concurrent: ContextSh
       .flatMap {
         case RequestErr(t) =>
           if (retries > 0)
-            Stream.eval(Logger[F].warn(s"Allocation failed with $t, retry")) *> Stream.eval(Timer[F].sleep(backOff)) *> retry(
+            Stream.eval(Logger[F].warn(s"Allocation failed with $t, retries")) *> Stream.eval(Timer[F].sleep(backOff)) *> retry(
               events,
               retries - 1,
               backOff * 2
@@ -140,7 +140,7 @@ private[cluster] class ConnectionStateManagement[F[_]: Concurrent: ContextShift:
       }
       .handleErrorWith { t =>
         for {
-          _ <- Stream.eval(Logger[F].info(s"Can't contact to coordinator for address: $coordinator, retry again."))
+          _ <- Stream.eval(Logger[F].info(s"Can't contact to coordinator for address: $coordinator, retries again."))
           _ <- Stream.eval(Sync[F].delay(currentState = Disconnect))
           _ <- healthCheck()
         } yield ()

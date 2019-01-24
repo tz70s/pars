@@ -41,14 +41,14 @@ private[pars] class ChannelRouter[F[_]: Concurrent: ContextShift: RaiseThrowable
   def subscribe[T](channel: Channel[T], queue: NoneTerminatedQueue[F, T]): Stream[F, Unit] =
     receivers.subscribe(channel, queue)
 
-  def send(event: ChannelProtocol, blockUntilEntry: FiniteDuration = 500.millis): Stream[F, Unit] =
+  def send(event: ChannelProtocol, blockUntilEntry: FiniteDuration = 500.millis, retries: Int = 3): Stream[F, Unit] =
     event match {
       case evt: Event[F, _] =>
         val policy = evt.to.strategy
         if (policy == ChannelOutputStrategy.NotUsed) {
           Stream.empty
         } else {
-          for {
+          val sending = for {
             entry <- blockUntilEntryAvailable(evt.to)
             s <- policy match {
               case ChannelOutputStrategy.Concurrent => unicast(entry, evt)
@@ -56,6 +56,15 @@ private[pars] class ChannelRouter[F[_]: Concurrent: ContextShift: RaiseThrowable
               case _ => Stream.empty
             }
           } yield s
+
+          sending.handleErrorWith {
+            case t: java.net.ConnectException =>
+              if (retries > 0)
+                Stream.eval(Logger[F].warn(s"Connection exception occurred while sending, cause: $t")) *> Stream
+                  .awakeDelay[F](100.millis) *> send(event, retries = retries - 1)
+              else repository.remove(evt.to) *> Stream(throw t)
+            case t => Stream(throw t)
+          }
         }
 
       case _ => throw new IllegalArgumentException(s"Unexpected protocol subtype to receive here.")
@@ -71,7 +80,8 @@ private[pars] class ChannelRouter[F[_]: Concurrent: ContextShift: RaiseThrowable
           .handleErrorWith { t: Throwable =>
             Stream.awakeDelay[F](backOff) *> blockUntilEntryAvailable(channel, backOff * factors)
           }
-      case t => Stream.raiseError(t)
+      case t =>
+        Stream.raiseError(t)
     }
 
   private def unicast(entry: ChannelRouteEntry[F], event: Event[F, _]): Stream[F, Unit] = {
