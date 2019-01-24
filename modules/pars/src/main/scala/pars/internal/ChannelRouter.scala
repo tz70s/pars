@@ -18,6 +18,7 @@ import scala.util.Random
 import scala.util.control.NonFatal
 import scala.concurrent.duration._
 import cats.implicits._
+import pars.cluster.CoordinatorProxy
 
 /**
  * Note that this is a '''DARK SIDE''' behavior which contains unavoidable ''Any'' cast and required high encapsulation.
@@ -27,7 +28,8 @@ import cats.implicits._
  * However, the processed stream should be cast back to normal type after evaluation at the call side or composition point.
  */
 private[pars] class ChannelRouter[F[_]: Concurrent: ContextShift: RaiseThrowable: Timer](
-    val repository: ChannelRoutingTable[F]
+    val repository: ChannelRoutingTable[F],
+    val proxy: CoordinatorProxy[F]
 )(
     implicit acg: AsynchronousChannelGroup
 ) {
@@ -64,9 +66,11 @@ private[pars] class ChannelRouter[F[_]: Concurrent: ContextShift: RaiseThrowable
                                        factors: Int = 2): Stream[F, ChannelRouteEntry[F]] =
     repository.lookUp(channel).handleErrorWith {
       case ParsNotFoundException(m) =>
-        // TODO consider a better log level?
-        Stream.eval(Logger[F].warn(s"Entry not available, block until available. $m")) *> Stream
-          .awakeDelay[F](backOff) *> blockUntilEntryAvailable(channel, backOff * factors)
+        proxy
+          .lookUpEntry(channel) *> blockUntilEntryAvailable(channel, backOff)
+          .handleErrorWith { t: Throwable =>
+            Stream.awakeDelay[F](backOff) *> blockUntilEntryAvailable(channel, backOff * factors)
+          }
       case t => Stream.raiseError(t)
     }
 
@@ -112,9 +116,10 @@ private[pars] class ChannelRouter[F[_]: Concurrent: ContextShift: RaiseThrowable
 
 private[pars] object ChannelRouter {
 
-  def apply[F[_]: Concurrent: ContextShift: RaiseThrowable: Timer](repository: ChannelRoutingTable[F])(
+  def apply[F[_]: Concurrent: ContextShift: RaiseThrowable: Timer](repository: ChannelRoutingTable[F],
+                                                                   proxy: CoordinatorProxy[F])(
       implicit acg: AsynchronousChannelGroup
-  ): ChannelRouter[F] = new ChannelRouter(repository)
+  ): ChannelRouter[F] = new ChannelRouter(repository, proxy)
 }
 
 private[pars] class EvaluationReceivers[F[_]: Concurrent] {

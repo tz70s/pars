@@ -4,12 +4,17 @@ import cats.effect.{ContextShift, IO, Timer}
 import pars.{Channel, ParEffect, Pars, ParsM}
 import fs2.Stream
 
+import scala.concurrent.duration._
+
+import cats.implicits._
+
 object PlusOne {
 
   private val mapperIn = Channel[Int]("mapper-in")
   private val mapperOut = Channel[Int]("mapper-out")
 
-  def source(implicit pe: ParEffect[IO]): ParsM[IO, Int] = Pars.emits(mapperIn)(0 to 100)
+  def source(implicit pe: ParEffect[IO]): ParsM[IO, Int] =
+    Pars.emits(mapperIn)(0 to 10)
 
   def mapper(implicit pe: ParEffect[IO]): Pars[IO, Int, Int] = Pars.concat(mapperIn, mapperOut) { from =>
     for {
@@ -22,6 +27,7 @@ object PlusOne {
   def run(implicit pe: ParEffect[IO], cs: ContextShift[IO], timer: Timer[IO]): Stream[IO, Int] =
     for {
       c <- Pars.spawn(source).concurrently(Pars.spawn(mapper))
+      _ <- Stream.awakeEvery[IO](1000.millis)
       s <- mapperOut.receive[IO].concurrently(c.unit())
     } yield s
 }

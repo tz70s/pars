@@ -77,7 +77,7 @@ final case class Channel[+T](id: String, strategy: ChannelOutputStrategy = Chann
   }
 
   private def implicitReceiver[F[_], I](channel: Channel[I])(implicit ev: ParEffect[F]): Pars[F, I, I] =
-    Pars.concat(channel, Channel.NotUsed, Strategy(replicas = 1, model = NoEvaluate))(s => s)
+    Pars.concat(channel, Channel.NotUsed, Strategy(replicas = 1, model = Stick()))(s => s)
 }
 
 object Channel {

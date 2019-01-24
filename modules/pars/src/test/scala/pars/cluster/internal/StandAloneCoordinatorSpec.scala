@@ -1,6 +1,6 @@
 package pars.cluster.internal
 
-import cats.effect.IO
+import cats.effect.{IO, Timer}
 import pars._
 import pars.internal.remote.tcp.TcpSocketConfig
 import org.scalatest.Matchers
@@ -11,8 +11,9 @@ import pars.cluster.CoordinationProtocol._
 import pars.internal.ParServer
 import pars.internal.remote.NetService
 import pars.internal.Protocol.Protocol
-
 import pars.internal._
+
+import scala.concurrent.duration._
 
 class StandAloneCoordinatorSpec extends NetParsSpec with Matchers {
 
@@ -74,7 +75,7 @@ class StandAloneCoordinatorSpec extends NetParsSpec with Matchers {
 
       val res = run.compile.toList.unsafeRunSync()
 
-      res.head shouldBe TestChannel
+      IO.race(Timer[IO].sleep(5.seconds), run.compile.toList).unsafeRunSync().map(_.head) shouldBe Right(TestChannel)
     }
   }
 }

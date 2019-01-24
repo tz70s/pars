@@ -1,7 +1,6 @@
 package pars.cluster
 
 import fs2.Stream
-import pars.Channel
 import pars.internal.{Protocol, UnsafeChannel, UnsafePars}
 import pars.internal.remote.tcp.TcpSocketConfig
 
@@ -81,9 +80,9 @@ object CoordinationProtocol {
   /**
    * Indicate request allocation success.
    *
-   * @param channel Channel reference for tracking.
+   * @param pars Pars reference for tracking.
    */
-  case class RequestOk[F[_]](channel: Channel[_], workers: Seq[TcpSocketConfig]) extends CoordinatorToProxy
+  case class RequestOk[F[_]](pars: UnsafePars[F], workers: Seq[TcpSocketConfig]) extends CoordinatorToProxy
 
   /**
    * Indicate request allocation failure.
@@ -91,6 +90,8 @@ object CoordinationProtocol {
    * @param throwable Error cause.
    */
   case class RequestErr(throwable: Throwable) extends CoordinatorToProxy
+
+  case class EntryLookUpRequest(channel: UnsafeChannel) extends ProxyToCoordinator
 
   sealed trait Command extends CoordinatorToProxy
 
@@ -123,4 +124,6 @@ object CoordinationProtocol {
   case class CommandErr(throwable: Throwable) extends ProxyToCoordinator
 
   case class NoAvailableWorker(message: String) extends Exception(message)
+
+  case class EntryLookUpException(message: String) extends Exception(message)
 }

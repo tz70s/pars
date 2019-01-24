@@ -20,7 +20,7 @@ private[pars] class ParServer[F[_]: Concurrent: ContextShift: Timer: RaiseThrowa
 
   private val repository = new ChannelRoutingTable[F]
   private val proxy = CoordinatorProxy(coordinators, repository)
-  private val router = ChannelRouter(repository)
+  private val router = ChannelRouter(repository, proxy)
 
   def spawn[I, O](pars: Pars[F, I, O]): Stream[F, Channel[I]] =
     proxy.spawn(pars)

@@ -2,6 +2,7 @@ package pars.internal
 
 import cats.effect.IO
 import fs2.Stream
+import pars.cluster.CoordinatorProxy
 import pars.internal.Protocol.{Event, EventErr, EventOk}
 import pars.internal.remote.tcp.TcpSocketConfig
 import pars.{NetParsSpec, ParEffect}
@@ -15,8 +16,9 @@ class ChannelRouterSpec extends NetParsSpec {
       val source = List(1, 2, 3)
 
       val table = new ChannelRoutingTable[IO]
+      val proxy = CoordinatorProxy(Seq(StandAloneCoordinatorAddress), table)
 
-      val router = new ChannelRouter[IO](table)
+      val router = new ChannelRouter[IO](table, proxy)
 
       val fakeWorker = Seq(TcpSocketConfig("localhost", 8181))
 
@@ -29,9 +31,9 @@ class ChannelRouterSpec extends NetParsSpec {
     }
 
     "intercept pars processing (evaluation) failure" in {
-      val repository = new ChannelRoutingTable[IO]
-
-      val router = new ChannelRouter[IO](repository)
+      val table = new ChannelRoutingTable[IO]
+      val proxy = CoordinatorProxy(Seq(StandAloneCoordinatorAddress), table)
+      val router = new ChannelRouter[IO](table, proxy)
 
       val result = for {
         s <- router.receive(Event(TestChannel, Stream(1)))

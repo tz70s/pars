@@ -6,6 +6,7 @@ import cats.effect.{Concurrent, ContextShift, Timer}
 import pars.internal.ParServer
 import pars.internal.remote.tcp.TcpSocketConfig
 import fs2.{RaiseThrowable, Stream}
+import pars.internal.remote.NetService
 
 import scala.collection.concurrent.TrieMap
 
@@ -116,11 +117,11 @@ object ParEffect {
  * @param replicas Number of tasks replicated to cluster-wide nodes.
  * @param roles Constraint for task affinity.
  */
-case class Strategy(replicas: Int, roles: List[String] = List.empty, model: EvaluationModel = Evaluate)
+case class Strategy(replicas: Int, roles: List[String] = List.empty, model: Affinity = NotStick)
 
-sealed trait EvaluationModel
-case object NoEvaluate extends EvaluationModel
-case object Evaluate extends EvaluationModel
+sealed trait Affinity
+case class Stick(address: TcpSocketConfig = NetService.address) extends Affinity
+case object NotStick extends Affinity
 
 /**
  * Bridge configuration and assembly strategies.
