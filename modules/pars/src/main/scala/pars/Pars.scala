@@ -2,7 +2,8 @@ package pars
 
 import cats.effect.{Concurrent, ContextShift, Sync, Timer}
 import fs2.concurrent.Queue
-import fs2.{RaiseThrowable, Stream}
+import fs2.{Pure, RaiseThrowable, Stream}
+import pars.cluster.Coordinator
 
 /**
  * Core abstraction over serializable stream closure for distributed computation.
@@ -142,24 +143,75 @@ object Pars {
   def offload[F[_], Out](stream: Stream[F, Out])(implicit ev: ParEffect[F]): Pars[F, Unit, Out] =
     supplyStream(stream)
 
-  def bind[F[_]: Concurrent: ContextShift: Timer: RaiseThrowable, I, O](pars: Pars[F, I, O]): Stream[F, Channel[I]] = {
-    val pe = pars.ev
-    pe.spawn(pars).concurrently(pe.server.bindAndHandle)
+  /**
+   * Spawn a pars on the fly.
+   *
+   * @example {{{
+   * Pars.spawn(pars).flatMap { (in, out) => ... }
+   * }}}
+   *
+   * @param pars Pars for spawned.
+   * @return Stream of evaluated with channel.
+   */
+  def spawn[F[_]: Concurrent: ContextShift: Timer: RaiseThrowable, I, O](pars: Pars[F, I, O]): Stream[F, Channel[I]] =
+    pars.ev.spawn(pars)
+
+  /**
+   * Serve a ParsM by spawning and trigger it.
+   *
+   * @param pars A ParsM instance.
+   * @return Evaluated stream.
+   */
+  def serveM[F[_]: Concurrent: ContextShift: Timer: RaiseThrowable, I, O](pars: ParsM[F, O]): Stream[F, Unit] = {
+    implicit val ev = pars.ev
+    ev.spawn(pars).flatMap(c => c.unit())
   }
 
-  def bind[F[_]: Concurrent: ContextShift: Timer: RaiseThrowable, T](
-      channel: Channel[T]
-  )(implicit ev: ParEffect[F]): Stream[F, T] = {
-    val receiver = implicitReceiver(channel)
+  /**
+   * Service all logic in place.
+   *
+   * @example {{{
+   * val stream = Pars.service(f)(pe)(coordinators)
+   * }}}
+   *
+   * @param f Core logic of streams.
+   * @param pes ParEffect instances.
+   * @param coordinators Coordinators instances.
+   * @return Stream of core logic which back internal server and coordinator running in background.
+   */
+  def service[F[_]: Concurrent, T](f: Stream[F, T])(pes: ParEffect[F]*)(coordinators: Coordinator[F]*): Stream[F, T] = {
+    val bindServers = Stream.emits(pes).map(p => p.server.bindAndHandle).parJoinUnbounded
+    val bindCoordinators = Stream.emits(coordinators).map(c => c.bindAndHandle()).parJoinUnbounded
 
-    for {
-      q <- Stream.eval(Queue.boundedNoneTerminated[F, T](1024))
-      _ <- ev.spawn(receiver)
-      _ <- ev.server.subscribe(channel, q)
-      s <- q.dequeue
-    } yield s
+    f concurrently bindServers concurrently bindCoordinators
   }
 
-  private def implicitReceiver[F[_], I](channel: Channel[I])(implicit ev: ParEffect[F]): Pars[F, I, I] =
-    Pars.concat(channel, Channel.NotUsed, Strategy(replicas = 1, model = NoEvaluate))(s => s)
+  /**
+   * Alternative builder pattern for service all logic in place.
+   *
+   * @example {{{
+   * val stream = Pars.bind(s).bind(pe).bind(coordinator).build
+   * }}}
+   *
+   * @param f Core logic of streams.
+   */
+  def bind[F[_]: Concurrent, T](f: Stream[F, T]) = new ParsServiceBuilder[F, T](f)
+}
+
+private[pars] class ParsServiceBuilder[F[_]: Concurrent, T](f: Stream[F, T]) {
+
+  var pes: Seq[ParEffect[F]] = Seq.empty
+  var coordinators: Seq[Coordinator[F]] = Seq.empty
+
+  def bind(p: ParEffect[F], ps: ParEffect[F]*): ParsServiceBuilder[F, T] = {
+    pes = pes ++ Seq(p) ++ ps
+    this
+  }
+
+  def bind(c: Coordinator[F], cs: Coordinator[F]*): ParsServiceBuilder[F, T] = {
+    coordinators = coordinators ++ Seq(c) ++ cs
+    this
+  }
+
+  def build: Stream[F, T] = Pars.service(f)(pes: _*)(coordinators: _*)
 }

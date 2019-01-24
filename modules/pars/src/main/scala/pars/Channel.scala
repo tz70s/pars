@@ -1,7 +1,8 @@
 package pars
 
 import cats.effect.{Concurrent, ContextShift, Timer}
-import fs2.Stream
+import fs2.concurrent.Queue
+import fs2.{RaiseThrowable, Stream}
 
 /**
  * Channel for pars composition.
@@ -26,14 +27,20 @@ final case class Channel[+T](id: String, strategy: ChannelOutputStrategy = Chann
    *
    * @example {{{
    * val pubStream = Stream(1, 2, 3)
-   * val pubResultStream = Channel[Int]("IntStream").unsafeSend(pubStream)
+   * val pubResultStream = Channel[Int]("IntStream").send(pubStream)
    * }}}
    *
    * @param source Source stream to publish.
-   * @return Return the publish evaluation result.
+   * @return Return the publish evaluation result but nothing.
    */
-  private[pars] def unsafeSend[F[_], U >: T](source: Stream[F, U])(implicit parEffect: ParEffect[F]): Stream[F, Unit] =
-    parEffect.send(this, source)
+  def send[F[_], U >: T](source: Stream[F, U])(implicit pe: ParEffect[F]): Stream[F, Unit] =
+    pe.send(this, source)
+
+  /**
+   * Send an empty stream to channel, which is useful to trigger ParsM instance which has no receiver stream.
+   */
+  def unit[F[_]]()(implicit pe: ParEffect[F]): Stream[F, Unit] =
+    pe.send(this, Stream.empty.covary[F])
 
   /**
    * Subscribe stream of value T from channel, the output strategy is specify by the [[ChannelOutputStrategy]]
@@ -46,13 +53,37 @@ final case class Channel[+T](id: String, strategy: ChannelOutputStrategy = Chann
    *
    * @return The subscribed stream to concat with other stream to deal with.
    */
-  def receive[F[_]: ParEffect: Concurrent: ContextShift: Timer]: Stream[F, T] = Pars.bind(this)
+  def receive[F[_]: ParEffect: Concurrent: ContextShift: Timer]: Stream[F, T] = bind(this)
+
+  /**
+   * INTERNAL API.
+   *
+   * Bind an implicit receiver pars for identification and runs out of deque.
+   *
+   * @param channel Channel for receiving.
+   * @return Stream of channel values.
+   */
+  private def bind[F[_]: Concurrent: ContextShift: Timer: RaiseThrowable, T](
+      channel: Channel[T]
+  )(implicit ev: ParEffect[F]): Stream[F, T] = {
+    val receiver = implicitReceiver(channel)
+
+    for {
+      q <- Stream.eval(Queue.boundedNoneTerminated[F, T](1024))
+      _ <- ev.spawn(receiver)
+      _ <- ev.server.subscribe(channel, q)
+      s <- q.dequeue
+    } yield s
+  }
+
+  private def implicitReceiver[F[_], I](channel: Channel[I])(implicit ev: ParEffect[F]): Pars[F, I, I] =
+    Pars.concat(channel, Channel.NotUsed, Strategy(replicas = 1, model = NoEvaluate))(s => s)
 }
 
 object Channel {
   val ChannelSize: Int = pureconfig.loadConfigOrThrow[Int]("pars.channel.size")
 
-  val NotUsed = Channel("empty-place-holder", ChannelOutputStrategy.EmptyPlaceHolder)
+  val NotUsed = Channel("not-used", ChannelOutputStrategy.NotUsed)
 }
 
 sealed trait ChannelOutputStrategy extends Serializable
@@ -60,5 +91,5 @@ sealed trait ChannelOutputStrategy extends Serializable
 object ChannelOutputStrategy {
   case object Concurrent extends ChannelOutputStrategy
   case object Broadcast extends ChannelOutputStrategy
-  case object EmptyPlaceHolder extends ChannelOutputStrategy
+  case object NotUsed extends ChannelOutputStrategy
 }

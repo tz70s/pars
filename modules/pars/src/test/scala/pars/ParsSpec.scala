@@ -25,12 +25,12 @@ trait NetParsSpec extends ParsSpec with BeforeAndAfterAll {
 
   val StandAloneCoordinatorAddress = TcpSocketConfig("localhost", 9898)
 
-  def TestChannel(implicit parEffect: ParEffect[IO]): Channel[Int] = Channel[Int]("TestChannel")
+  def TestChannel(implicit pe: ParEffect[IO]): Channel[Int] = Channel[Int]("test")
 
-  def TestChannelOut(implicit parEffect: ParEffect[IO]): Channel[Int] =
-    Channel[Int]("TestChannelOut", ChannelOutputStrategy.EmptyPlaceHolder)
+  def TestChannelOut(implicit pe: ParEffect[IO]): Channel[Int] =
+    Channel[Int]("test-out", ChannelOutputStrategy.NotUsed)
 
-  def TestPars(implicit parEffect: ParEffect[IO]): Pars[IO, Int, Int] = Pars.concat(TestChannel, TestChannelOut) {
+  def TestPars(implicit pe: ParEffect[IO]): Pars[IO, Int, Int] = Pars.concat(TestChannel, TestChannelOut) {
     s: Stream[IO, Int] =>
       for {
         i <- s

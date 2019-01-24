@@ -62,7 +62,7 @@ class CoordinatorProxySpec extends NetParsSpec with Matchers {
 
   "ConnectionStateManagement" should {
     "work with periodic health check (no assertion in this case)" in {
-      val coordinator = StandAloneCoordinator[IO].bindAndHandle(StandAloneCoordinatorAddress)
+      val coordinator = StandAloneCoordinator[IO](StandAloneCoordinatorAddress).bindAndHandle()
 
       val management = ConnectionStateManagement[IO](Seq(StandAloneCoordinatorAddress))
 

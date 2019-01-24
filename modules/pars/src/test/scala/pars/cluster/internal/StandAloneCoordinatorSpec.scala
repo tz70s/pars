@@ -24,7 +24,7 @@ class StandAloneCoordinatorSpec extends NetParsSpec with Matchers {
   "StandAloneCoordinator" should {
 
     "accept heart beat event" in {
-      val coordinator = StandAloneCoordinator[IO].bindAndHandle(StandAloneCoordinatorAddress)
+      val coordinator = StandAloneCoordinator[IO](StandAloneCoordinatorAddress).bindAndHandle()
 
       def heartbeat: Stream[IO, Protocol] =
         NetService[IO]
@@ -36,7 +36,7 @@ class StandAloneCoordinatorSpec extends NetParsSpec with Matchers {
     }
 
     "return error cause no worker involved" in {
-      val coordinator = StandAloneCoordinator[IO].bindAndHandle(StandAloneCoordinatorAddress)
+      val coordinator = StandAloneCoordinator[IO](StandAloneCoordinatorAddress).bindAndHandle()
 
       def request: Stream[IO, Protocol] =
         NetService[IO]
@@ -50,7 +50,7 @@ class StandAloneCoordinatorSpec extends NetParsSpec with Matchers {
     }
 
     "intercept error cause while fake worker connection failed" in {
-      val coordinator = StandAloneCoordinator[IO].bindAndHandle(StandAloneCoordinatorAddress)
+      val coordinator = StandAloneCoordinator[IO](StandAloneCoordinatorAddress).bindAndHandle()
 
       def request: Stream[IO, Protocol] =
         NetService[IO]
@@ -65,7 +65,7 @@ class StandAloneCoordinatorSpec extends NetParsSpec with Matchers {
     }
 
     "spawn and accept a successful response" in {
-      val coordinator = StandAloneCoordinator[IO].bindAndHandle(StandAloneCoordinatorAddress)
+      val coordinator = StandAloneCoordinator[IO](StandAloneCoordinatorAddress).bindAndHandle()
 
       val server = new ParServer[IO](Seq(StandAloneCoordinatorAddress))
 

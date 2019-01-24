@@ -20,19 +20,21 @@ import pars.internal.UnsafePars
 
 import scala.concurrent.duration._
 
-class StandAloneCoordinator[F[_]: Concurrent: ContextShift: Timer](
+class StandAloneCoordinator[F[_]: Concurrent: ContextShift: Timer](override val address: TcpSocketConfig)(
     implicit val acg: AsynchronousChannelGroup
-) extends Coordinator {
+) extends Coordinator[F] {
 
   private val server = new StandAloneCoordinatorParServer[F]
 
-  def bindAndHandle(address: TcpSocketConfig): Stream[F, Unit] =
+  override def bindAndHandle(): Stream[F, Unit] =
     NetService[F].bindAndHandle(address, server.logic)
 }
 
 object StandAloneCoordinator {
-  def apply[F[_]: Concurrent: ContextShift: Timer](implicit acg: AsynchronousChannelGroup): StandAloneCoordinator[F] =
-    new StandAloneCoordinator[F]()
+  def apply[F[_]: Concurrent: ContextShift: Timer](
+      address: TcpSocketConfig
+  )(implicit acg: AsynchronousChannelGroup): StandAloneCoordinator[F] =
+    new StandAloneCoordinator[F](address)
 }
 
 case class ParsExtension[F[_]](machine: UnsafePars[F], records: Set[TcpSocketConfig])

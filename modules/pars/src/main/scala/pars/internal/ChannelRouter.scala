@@ -43,7 +43,7 @@ private[pars] class ChannelRouter[F[_]: Concurrent: ContextShift: RaiseThrowable
     event match {
       case evt: Event[F, _] =>
         val policy = evt.to.strategy
-        if (policy == ChannelOutputStrategy.EmptyPlaceHolder) {
+        if (policy == ChannelOutputStrategy.NotUsed) {
           Stream.empty
         } else {
           for {

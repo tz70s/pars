@@ -1,10 +1,21 @@
 package pars.cluster
 
+import fs2.Stream
 import pars.Channel
 import pars.internal.{Protocol, UnsafeChannel, UnsafePars}
 import pars.internal.remote.tcp.TcpSocketConfig
 
-abstract class Coordinator
+trait Coordinator[F[_]] {
+
+  val address: TcpSocketConfig
+
+  /**
+   * Serving coordinator.
+   *
+   * @return Stream of launched.
+   */
+  def bindAndHandle(): Stream[F, Unit]
+}
 
 object CoordinatorProvider {
 
@@ -20,7 +31,7 @@ object CoordinatorProvider {
    * @param clazz Providing class of coordinator.
    * @return Coordinator instance.
    */
-  def get(clazz: Class[Coordinator], args: Any*): Coordinator = clazz.newInstance()
+  def get[F[_]](clazz: Class[Coordinator[F]], args: Any*): Coordinator[F] = clazz.newInstance()
 
   /**
    * Load a coordinator from a given class name.
@@ -32,7 +43,8 @@ object CoordinatorProvider {
    * @param clazzName Class name for coordinator.
    * @return Coordinator instance.
    */
-  def getFromName(clazzName: String): Coordinator = Class.forName(clazzName).newInstance().asInstanceOf[Coordinator]
+  def getFromName[F[_]](clazzName: String): Coordinator[F] =
+    Class.forName(clazzName).newInstance().asInstanceOf[Coordinator[F]]
 }
 
 object CoordinationProtocol {
