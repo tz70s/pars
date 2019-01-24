@@ -6,6 +6,8 @@ import pars.cluster.internal.StandAloneCoordinator
 
 import scala.concurrent.duration._
 
+import cats.implicits._
+
 class ChannelSpec extends NetParsSpec {
 
   "Channel" should {
@@ -17,9 +19,22 @@ class ChannelSpec extends NetParsSpec {
 
       val source = Stream(1, 2, 3, 4, 5)
 
-      val send = TestChannel.send[IO, Int](source) concurrently Pars.spawn(TestPars)
+      val in = Channel[Int]("test-in")
+      val out = Channel[Int]("test-out")
 
-      IO.race(Timer[IO].sleep(5.seconds), Pars.service(send)(pe)(coordinator).compile.drain).unsafeRunSync()
+      val pars = Pars.concat(in, out) { from: Stream[IO, Int] =>
+        for {
+          i <- from
+          plus = i + 1
+          _ <- Stream.eval(IO { println(s"Get the number of $i, and map it to $plus") })
+        } yield plus
+      }
+
+      val send = Pars.spawn(pars) *> in.send[IO, Int](source)
+      val receive = out.receive[IO]
+
+      IO.race(Timer[IO].sleep(5.seconds), Pars.service(receive concurrently send)(pe)(coordinator).compile.toList)
+        .unsafeRunSync() shouldBe Right(List(2, 3, 4, 5, 6))
     }
 
     "work with receive method" in {

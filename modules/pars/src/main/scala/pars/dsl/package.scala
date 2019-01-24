@@ -11,7 +11,11 @@ package object dsl {
 
   // Instances for Pars
 
-  implicit def parsMonadInstance[F[_]](implicit pe: ParEffect[F]) = new Monad[ParsM[F, ?]] {
+  implicit def parsMonadInstance[F[_]](implicit pe: ParEffect[F]): _root_.cats.Monad[
+    ({
+      type Λ$[β] = _root_.pars.ParsM[F, β]
+    })#Λ$
+  ] = new Monad[ParsM[F, ?]] {
 
     override def pure[A](x: A): ParsM[F, A] = Pars.emit(x)
 

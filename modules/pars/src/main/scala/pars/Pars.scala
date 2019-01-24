@@ -83,6 +83,16 @@ object Pars {
     supplyStream(Stream.emits(values))
 
   /**
+   * Pure value emission for pars, alias to fs2.Stream.emits.
+   *
+   * @see fs2.Stream.emits
+   * @param out Output channel for ParsM instance.
+   * @param values Emits sequence values.
+   */
+  def emits[F[_], Out](out: Channel[Out])(values: Seq[Out])(implicit ev: ParEffect[F]): ParsM[F, Out] =
+    apply(out)(Stream.emits(values))
+
+  /**
    * Effective evaluation for pars.
    *
    * @example {{{
@@ -156,6 +166,9 @@ object Pars {
   def spawn[F[_]: Concurrent: ContextShift: Timer: RaiseThrowable, I, O](pars: Pars[F, I, O]): Stream[F, Channel[I]] =
     pars.ev.spawn(pars)
 
+  def spawn[F[_]: Concurrent: ContextShift: Timer: RaiseThrowable, O](pars: ParsM[F, O]): Stream[F, Channel[O]] =
+    pars.ev.spawn(pars)
+
   /**
    * Serve a ParsM by spawning and trigger it.
    *
@@ -163,7 +176,7 @@ object Pars {
    * @return Evaluated stream.
    */
   def serveM[F[_]: Concurrent: ContextShift: Timer: RaiseThrowable, I, O](pars: ParsM[F, O]): Stream[F, Unit] = {
-    implicit val ev = pars.ev
+    implicit val ev: _root_.pars.ParEffect[F] = pars.ev
     ev.spawn(pars).flatMap(c => c.unit())
   }
 
