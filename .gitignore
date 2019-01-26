@@ -7,3 +7,7 @@ target/
 
 # Experimental worksheet for api testing.
 WorkSheet.sc
+
+# When launching metals.
+.metals/
+.bloop/
